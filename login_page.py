@@ -5,18 +5,23 @@ import mysql.connector
 import bcrypt
 
 # ---------- FILE PATHS ----------
-bg_path = "C:/Users/DELL/Desktop/background.jpg"  # Ensure this path is correct
-logo_path = "C:/Users/DELL/Desktop/VTARA.png"    # Ensure this path is correct
+bg_path = "images/background.jpg"  # Ensure this path is correct
+logo_path = "images/vtara.png"    # Ensure this path is correct
 
-# ---------- DATABASE CONNECTION ----------
+# ---
+#
 def get_db_connection():
+    """Establishes a database connection using credentials from st.secrets."""
     try:
         return mysql.connector.connect(
-            host="localhost",
-            user="vclarifi",
-            password="Siddarth@99", # Consider using environment variables or Streamlit secrets for credentials
-            database="VClarifi"
+            host=st.secrets.database.DB_HOST,
+            user=st.secrets.database.DB_USER,
+            password=st.secrets.database.DB_PASSWORD,
+            database=st.secrets.database.DB_DATABASE
         )
+    except (AttributeError, KeyError):
+        st.error("Database credentials are not configured correctly in your secrets file.")
+        return None
     except mysql.connector.Error as err:
         st.error(f"Database connection error: {err}")
         return None
@@ -117,22 +122,15 @@ def apply_styles():
 
 # ---------- LOGIN FUNCTION ----------
 def login(navigate_to):
-    # st.set_page_config() must be the first Streamlit command executed, and only once per page.
-    # If this 'login' function defines the entire view/page, this is the correct place.
     st.set_page_config(layout="wide")
 
-    # Handle navigation triggered by URL query parameters
-    # This check should occur early, before rendering the bulk of the page.
     if "page" in st.query_params:
         page_value = st.query_params.get("page")
         if page_value == "forgot":
-            # Clear the 'page' query parameter to prevent re-navigation on subsequent script reruns or page refresh.
-            # This modifies st.query_params for the current script run and schedules a URL update for the browser.
             del st.query_params["page"]
             
-            # Call the provided navigation function to switch to the "forgot password" page/view
             navigate_to("forgot") 
-            return  # Exit this function to prevent rendering the login page
+            return
 
     set_background(bg_path)
     apply_styles()
@@ -189,10 +187,7 @@ def login(navigate_to):
                 navigate_to("Survey")  # Navigate to the Survey page
             else:
                 st.error("Invalid email or password.")
-
-        # Modified "Forgot Password?" link:
-        # - href now points to "?page=forgot" to set a URL query parameter.
-        # - target="_self" ensures it opens in the same tab.
+        
         st.markdown("""
             <div style="text-align: center; font-size: 13px; color: #333;">
                 Don’t have an account? 
@@ -205,60 +200,10 @@ def login(navigate_to):
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-# Example of how you might call this login function (if it's part of a larger app)
-# def app():
-#     # This function would be your app's main router, deciding which "page" to show.
-#     # 'navigate_to' would be a function that changes st.session_state.current_page (or similar)
-#     # and then calls st.experimental_rerun() or lets Streamlit rerun naturally.
-#     
-#     # Placeholder for navigate_to function
-#     def navigate(page_name):
-#         st.session_state.current_page = page_name
-#         # In a real multipage app, you might clear query params here or rely on st.experimental_rerun()
-#         if "page" in st.query_params: # Example of specific cleanup if desired
-#             del st.query_params['page']
-#         st.rerun() # Use st.rerun() for modern Streamlit versions
-#
-#     if 'current_page' not in st.session_state:
-#         st.session_state.current_page = 'login'
-#
-#     # Initial query param check could also be here at the app's entry point
-#     if "page" in st.query_params and st.query_params.get("page") == "forgot" and st.session_state.current_page != "forgot_redirecting":
-#         # Temporary state to handle redirect
-#         st.session_state.current_page = "forgot_redirecting" 
-#         del st.query_params["page"]
-#         navigate("forgot") # This will cause a rerun, and the next block will catch 'forgot'
-#         return
-#
-#     if st.session_state.current_page == 'login':
-#         login(navigate)
-#     elif st.session_state.current_page == 'Survey':
-#         st.title("Survey Page") # Placeholder for Survey page content
-#         # survey_page_function(navigate) 
-#     elif st.session_state.current_page == 'User_Registration':
-#         st.title("User Registration Page") # Placeholder
-#         # registration_page_function(navigate)
-#     elif st.session_state.current_page == 'forgot':
-#         st.title("Forgot Password Page") # Placeholder for forgot.py content
-#         # forgot_password_page_function(navigate)
-#
-# if __name__ == '__main__':
-#     # If this script is run directly as the login page:
-#     # Define a dummy navigate_to or integrate with your actual multi-page logic.
-#     def dummy_navigate_to(page_name):
-#         st.success(f"Navigating to {page_name} (dummy)")
-#         if page_name == "forgot":
-#             # In a real scenario, this would load forgot.py's content
-#             st.markdown("## Forgot Password Page Content (from forgot.py)") 
-#             st.stop() # Stop further execution if navigation means showing a new page here
-#         elif page_name == "Survey":
-#             st.markdown("## Survey Page Content")
-#             st.stop()
-#         elif page_name == "User_Registration":
-#             st.markdown("## User Registration Page Content")
-#             st.stop()
+# Example usage for standalone testing
+if __name__ == '__main__':
+    def dummy_navigate_to(page_name):
+        st.success(f"Navigating to {page_name} (dummy)")
+        st.stop()
 
-#     login(dummy_navigate_to)
-#
-#     # If part of a larger app structure, you would call something like app()
-#     # app()
+    login(dummy_navigate_to)
