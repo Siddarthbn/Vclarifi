@@ -5,12 +5,4 @@ bcrypt
 pandas
 numpy
 plotly
-PyPDF2
-python-dotenv
 google-generativeai
-langchain
-langchain-community
-langchain-core
-langchain-groq
-langchain-huggingface
-faiss-cpu
