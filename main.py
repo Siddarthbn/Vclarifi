@@ -1,23 +1,19 @@
-# main.py
 import streamlit as st
-import importlib # Using importlib for more robust imports
+import importlib
 
-# -------------------- Initialize Session State --------------------
+# Initialize session state variables
 if 'current_page' not in st.session_state:
-    st.session_state.current_page = 'login'  # Default to login page
+    st.session_state.current_page = 'login'  # default page
 
 if 'user_email' not in st.session_state:
-    st.session_state.user_email = None  # Store user_email in session_state
+    st.session_state.user_email = None
 
-# -------------------- Page Navigation Function --------------------
 def navigate_to(page_name):
-    """Sets the current page in session state and reruns the app."""
+    """Change page and rerun app"""
     st.session_state.current_page = page_name
-    st.rerun()
+    st.experimental_rerun()  # st.rerun() was deprecated
 
-# -------------------- Page Loader --------------------
 def load_page():
-    """Loads and displays the current page based on session state."""
     page_key = st.session_state.current_page
     user_email = st.session_state.get('user_email')
 
@@ -36,9 +32,8 @@ def load_page():
     }
 
     page_info = page_modules.get(page_key)
-
     if page_info is None:
-        st.error(f"🚫 Page '{page_key}' not found! Please check the navigation links.")
+        st.error(f"🚫 Page '{page_key}' not found!")
         if st.button("Go to Login"):
             navigate_to('login')
         return
@@ -49,34 +44,32 @@ def load_page():
             navigate_to('login')
         return
 
+    module_name = page_info['module_name']
+    function_name = page_info['function_name']
+
     try:
-        # Dynamically import the module
-        # Assumes files like 'forgot.py', 'login_page.py' exist in the same directory or Python path
-        module = importlib.import_module(page_info['module_name'])
-        # Get the function from the imported module
-        page_function = getattr(module, page_info['function_name'])
+        # Debug print
+        print(f"Importing module '{module_name}' and calling function '{function_name}'")
 
-        # Call the function with appropriate arguments
+        module = importlib.import_module(module_name)
+        page_function = getattr(module, function_name)
+
         if page_info['requires_login']:
-            page_function(navigate_to, user_email) # navigate_to is from main.py
+            page_function(navigate_to, user_email)
         else:
-            # For login, User_Registration, Consultant_Registration, forgot, and other non-login pages
-            page_function(navigate_to) # navigate_to is from main.py
+            page_function(navigate_to)
 
-    except ImportError:
-        st.error(f"🚫 Error: Could not import page module '{page_info['module_name']}'. Ensure the file '{page_info['module_name']}.py' exists and is in the Python path.")
-    except AttributeError:
-        st.error(f"🚫 Error: Could not find function '{page_info['function_name']}' in module '{page_info['module_name']}'. Check the function name in both main.py and the module file.")
+    except ModuleNotFoundError as mnfe:
+        st.error(f"🚫 Module '{module_name}' not found. Make sure '{module_name}.py' exists in the project folder.")
+        st.error(str(mnfe))
+    except AttributeError as ae:
+        st.error(f"🚫 Function '{function_name}' not found in module '{module_name}'.")
+        st.error(str(ae))
     except Exception as e:
-        st.error(f"🚫 An unexpected error occurred loading page '{page_key}': {str(e)}")
-        # For more detailed debugging during development, you might uncomment the following:
+        st.error(f"🚫 Unexpected error loading page '{page_key}': {e}")
+        # Uncomment below for full traceback during development:
         # import traceback
         # st.error(traceback.format_exc())
 
-# -------------------- Run App --------------------
 if __name__ == "__main__":
-    # You can set a global page config here if desired for all pages.
-    # Example: st.set_page_config(layout="wide", page_title="VClarifi App")
-    # However, individual pages might also set their own config if this is not set.
-    # If not set here, ensure each page (like login.py, forgot.py) calls st.set_page_config if needed.
     load_page()
