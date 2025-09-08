@@ -30,32 +30,53 @@ def get_aws_secrets():
         return None
 
 # --- REFINED DATABASE CONNECTION CLASS WITH POOLING ---
+# --- DEBUGGING VERSION OF DATABASE CONNECTION CLASS ---
 class DatabaseConnection:
     _pool = None
 
     @classmethod
     def initialize_pool(cls):
-        """Initializes the database connection pool."""
+        """Initializes the database connection pool with debugging information."""
         if cls._pool is None:
             secrets = get_aws_secrets()
+            st.info("🔐 AWS secrets fetched.")
+
             if not secrets:
-                st.error("Could not load secrets from AWS. Database connection pool failed.")
+                st.error("❌ Could not load secrets from AWS. Database connection pool failed.")
                 return
 
-            db_secrets = secrets.get("database", {})  # ✅ Corrected to use nested secrets
+            # 🔍 DEBUG: Print the secrets
+            st.code(json.dumps(secrets, indent=2), language="json")
+
+            # Try both nested and flat secret formats
+            db_secrets = secrets.get("database", secrets)
+
+            # 🔍 DEBUG: Show extracted database secrets
+            st.subheader("🛠 Extracted DB Secrets:")
+            st.write(db_secrets)
+
+            # Validate keys
+            required_keys = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_DATABASE"]
+            missing_keys = [key for key in required_keys if not db_secrets.get(key)]
+            if missing_keys:
+                st.error(f"❌ Missing DB keys in secret: {', '.join(missing_keys)}")
+                return
 
             try:
+                st.info("🚀 Attempting to connect to MySQL with given credentials...")
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
                     pool_size=5,
-                    host=db_secrets.get("DB_HOST"),
-                    user=db_secrets.get("DB_USER"),
-                    password=db_secrets.get("DB_PASSWORD"),
-                    database=db_secrets.get("DB_DATABASE")
+                    host=db_secrets["DB_HOST"],
+                    user=db_secrets["DB_USER"],
+                    password=db_secrets["DB_PASSWORD"],
+                    database=db_secrets["DB_DATABASE"]
                 )
+                st.success("✅ MySQL connection pool initialized successfully.")
             except mysql.connector.Error as err:
-                st.error(f"Database connection pool error: {err}")
-                cls._pool = None  # Ensure pool is None on failure
+                st.error("❌ MySQL connection failed. Check credentials and host.")
+                st.exception(err)
+                cls._pool = None
 
     @classmethod
     def get_connection(cls):
@@ -64,7 +85,13 @@ class DatabaseConnection:
             cls.initialize_pool()
 
         if cls._pool:
-            return cls._pool.get_connection()
+            try:
+                conn = cls._pool.get_connection()
+                st.info("✅ Successfully obtained connection from pool.")
+                return conn
+            except mysql.connector.Error as err:
+                st.error("❌ Failed to get a connection from the pool.")
+                st.exception(err)
         return None
 
 # --- UPDATED LOGIN CHECK FUNCTION ---
