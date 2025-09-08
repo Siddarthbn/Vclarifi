@@ -41,7 +41,7 @@ class DatabaseConnection:
             if not secrets:
                 st.error("Could not load secrets from AWS. Database connection pool failed.")
                 return
-
+            
             try:
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
@@ -60,7 +60,7 @@ class DatabaseConnection:
         """Gets a connection from the pool."""
         if cls._pool is None:
             cls.initialize_pool()
-
+        
         if cls._pool:
             return cls._pool.get_connection()
         return None
@@ -83,10 +83,10 @@ def check_login(email, password):
             stored_hashed_password = result[0]
             if isinstance(stored_hashed_password, str):
                 stored_hashed_password = stored_hashed_password.encode('utf-8')
-
+            
             if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
                 return True
-
+            
     except mysql.connector.Error as err:
         st.error(f"Database query error during login: {err}")
     except Exception as e:
@@ -231,7 +231,7 @@ def login(navigate_to):
 # Example usage for standalone testing
 if __name__ == '__main__':
     DatabaseConnection.initialize_pool() # Initialize the pool when the app starts
-
+    
     def dummy_navigate_to(page_name):
         st.success(f"Navigating to {page_name} (dummy)")
         st.stop()
