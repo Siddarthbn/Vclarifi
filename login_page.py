@@ -42,18 +42,20 @@ class DatabaseConnection:
                 st.error("Could not load secrets from AWS. Database connection pool failed.")
                 return
 
+            db_secrets = secrets.get("database", {})  # ✅ Corrected to use nested secrets
+
             try:
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
                     pool_size=5,
-                    host=secrets.get("DB_HOST"),
-                    user=secrets.get("DB_USER"),
-                    password=secrets.get("DB_PASSWORD"),
-                    database=secrets.get("DB_DATABASE")
+                    host=db_secrets.get("DB_HOST"),
+                    user=db_secrets.get("DB_USER"),
+                    password=db_secrets.get("DB_PASSWORD"),
+                    database=db_secrets.get("DB_DATABASE")
                 )
             except mysql.connector.Error as err:
                 st.error(f"Database connection pool error: {err}")
-                cls._pool = None # Ensure pool is None on failure
+                cls._pool = None  # Ensure pool is None on failure
 
     @classmethod
     def get_connection(cls):
@@ -95,9 +97,8 @@ def check_login(email, password):
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
-            conn.close() # This returns the connection to the pool
+            conn.close()  # Return connection to pool
     return False
-
 
 # ---------- UI STYLING ----------
 def set_background(image_path):
@@ -228,9 +229,9 @@ def login(navigate_to):
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-# Example usage for standalone testing
+# ---------- STANDALONE USAGE (OPTIONAL FOR LOCAL TESTING) ----------
 if __name__ == '__main__':
-    DatabaseConnection.initialize_pool() # Initialize the pool when the app starts
+    DatabaseConnection.initialize_pool()  # Initialize pool on startup
 
     def dummy_navigate_to(page_name):
         st.success(f"Navigating to {page_name} (dummy)")
