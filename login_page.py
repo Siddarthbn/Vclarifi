@@ -6,14 +6,10 @@ from mysql.connector import pooling
 import bcrypt
 import boto3
 import json
-import logging
 
 # ---------- FILE PATHS ----------
-BG_PATH = "images/background.jpg"  # Ensure this path is correct
-LOGO_PATH = "images/vtara.png"     # Ensure this path is correct
-
-# Setup logger
-logger = logging.getLogger(__name__)
+bg_path = "images/background.jpg"  # Ensure this path is correct
+logo_path = "images/vtara.png"     # Ensure this path is correct
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
 @st.cache_data(ttl=600)
@@ -22,70 +18,62 @@ def get_aws_secrets():
     secret_name = "production/vclarifi/app_secrets"
     region_name = "us-east-1"  # Change to your AWS region if different
 
+    session = boto3.session.Session()
+    client = session.client(service_name='secretsmanager', region_name=region_name)
+
     try:
-        session = boto3.session.Session()
-        client = session.client(service_name="secretsmanager", region_name=region_name)
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-        secret_string = get_secret_value_response["SecretString"]
+        secret_string = get_secret_value_response['SecretString']
         return json.loads(secret_string)
     except Exception as e:
-        logger.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
+        st.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
         return None
 
-# --- DATABASE CONNECTION CLASS WITH POOLING ---
+# --- REFINED DATABASE CONNECTION CLASS WITH POOLING ---
 class DatabaseConnection:
     _pool = None
 
     @classmethod
     def initialize_pool(cls):
         """Initializes the database connection pool."""
-        if cls._pool is not None:
-            return
+        if cls._pool is None:
+            secrets = get_aws_secrets()
+            if not secrets:
+                st.error("Could not load secrets from AWS. Database connection pool failed.")
+                return
 
-        secrets = get_aws_secrets()
-        if not secrets:
-            logger.error("Could not load secrets from AWS. Database connection pool failed.")
-            return
-
-        try:
-            cls._pool = pooling.MySQLConnectionPool(
-                pool_name="vclarifi_pool",
-                pool_size=5,
-                host=secrets.get("DB_HOST"),
-                user=secrets.get("DB_USER"),
-                password=secrets.get("DB_PASSWORD"),
-                database=secrets.get("DB_DATABASE"),
-            )
-            logger.info("Database connection pool initialized successfully.")
-        except mysql.connector.Error as err:
-            logger.error(f"Database connection pool error: {err}")
-            cls._pool = None
+            try:
+                cls._pool = pooling.MySQLConnectionPool(
+                    pool_name="vclarifi_pool",
+                    pool_size=5,
+                    host=secrets.get("DB_HOST"),
+                    user=secrets.get("DB_USER"),
+                    password=secrets.get("DB_PASSWORD"),
+                    database=secrets.get("DB_DATABASE")
+                )
+            except mysql.connector.Error as err:
+                st.error(f"Database connection pool error: {err}")
+                cls._pool = None # Ensure pool is None on failure
 
     @classmethod
     def get_connection(cls):
-        """Gets a connection from the pool or initializes the pool if needed."""
+        """Gets a connection from the pool."""
         if cls._pool is None:
             cls.initialize_pool()
 
         if cls._pool:
-            try:
-                return cls._pool.get_connection()
-            except mysql.connector.Error as e:
-                logger.error(f"Error getting connection from pool: {e}")
-                return None
+            return cls._pool.get_connection()
         return None
 
-# --- LOGIN CHECK FUNCTION ---
-def check_login(email: str, password: str) -> bool:
+# --- UPDATED LOGIN CHECK FUNCTION ---
+def check_login(email, password):
     """Checks user credentials against the database using a connection from the pool."""
     conn = None
     cursor = None
-
     try:
         conn = DatabaseConnection.get_connection()
-        if conn is None:
-            logger.warning("Failed to get DB connection from pool.")
-            return False
+        if not conn:
+            return False  # Failed to get connection from pool
 
         cursor = conn.cursor()
         cursor.execute("SELECT Password FROM user_registration WHERE Email_Id = %s", (email,))
@@ -94,32 +82,29 @@ def check_login(email: str, password: str) -> bool:
         if result and result[0]:
             stored_hashed_password = result[0]
             if isinstance(stored_hashed_password, str):
-                stored_hashed_password = stored_hashed_password.encode("utf-8")
+                stored_hashed_password = stored_hashed_password.encode('utf-8')
 
-            if bcrypt.checkpw(password.encode("utf-8"), stored_hashed_password):
+            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
                 return True
-        return False
 
     except mysql.connector.Error as err:
-        logger.error(f"Database query error during login: {err}")
-        return False
+        st.error(f"Database query error during login: {err}")
     except Exception as e:
-        logger.error(f"Unexpected error during login: {e}")
-        return False
+        st.error(f"An unexpected error occurred during login: {e}")
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
-            conn.close()  # Return connection to pool
+            conn.close() # This returns the connection to the pool
+    return False
+
 
 # ---------- UI STYLING ----------
-def set_background(image_path: str):
-    """Sets the background image for the app."""
+def set_background(image_path):
     try:
         with open(image_path, "rb") as img_file:
             encoded = base64.b64encode(img_file.read()).decode()
-        st.markdown(
-            f"""
+        st.markdown(f"""
             <style>
             [data-testid="stAppViewContainer"] {{
                 background-image: url("data:image/jpg;base64,{encoded}");
@@ -150,86 +135,73 @@ def set_background(image_path: str):
                 margin-bottom: 10px;
             }}
             </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        """, unsafe_allow_html=True)
     except FileNotFoundError:
         st.error(f"Background image not found at {image_path}")
 
 def apply_styles():
-    """Applies custom CSS styles."""
-    st.markdown(
-        """
+    st.markdown("""
         <style>
-        .left-info {
+        .left-info {{
             color: white;
             font-size: 14px;
             margin-top: 20px;
             padding-left: 60px;
             line-height: 1.6;
-        }
-        .inline-info {
+        }}
+        .inline-info {{
             display: flex;
             gap: 20px;
-        }
-        .login-container {
+        }}
+        .login-container {{
             background-color: rgba(255, 255, 255, 0.95);
             padding: 40px;
             border-radius: 20px;
             width: 400px;
             margin-top: 80px;
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-        }
+        }}
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
 
 # ---------- LOGIN FUNCTION ----------
 def login(navigate_to):
-    """Renders the login page."""
     st.set_page_config(layout="wide")
 
-    # Handle special query params for navigation
-    page = st.experimental_get_query_params().get("page", [None])[0]
-    if page == "forgot":
-        st.experimental_set_query_params()
-        navigate_to("forgot")
-        return
+    if "page" in st.query_params:
+        page_value = st.query_params.get("page")
+        if page_value == "forgot":
+            del st.query_params["page"]
+            navigate_to("forgot")
+            return
 
-    set_background(BG_PATH)
+    set_background(bg_path)
     apply_styles()
 
     col_left, col_right = st.columns([1.2, 1])
 
     with col_left:
         try:
-            logo_image = Image.open(LOGO_PATH)
+            logo_image = Image.open(logo_path)
             st.image(logo_image, width=300)
-            st.markdown(
-                """
-                <div class="left-info">
-                    <div class="inline-info">
-                        <div><b>📞 Phone:</b> +123-456-7890</div>
-                        <div><b>✉️ E-Mail:</b> hello@vclarifi.com</div>
-                    </div>
-                    <div class="inline-info">
-                        <div><b>🌐 Website:</b> www.vclarifi.com</div>
-                        <div><b>📍 Address:</b> Canberra, Australia</div>
-                    </div>
+            st.markdown("""
+            <div class="left-info">
+                <div class="inline-info">
+                    <div><b>📞 Phone:</b> +123-456-7890</div>
+                    <div><b>✉️ E-Mail:</b> hello@vclarifi.com</div>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                <div class="inline-info">
+                    <div><b>🌐 Website:</b> www.vclarifi.com</div>
+                    <div><b>📍 Address:</b> Canberra, Australia</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
         except FileNotFoundError:
-            st.error(f"Logo image not found at {LOGO_PATH}")
+            st.error(f"Logo image not found at {logo_path}")
 
     with col_right:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        st.markdown(
-            '<div style="font-size: 32px; font-weight: bold; color: navy; text-align: center;">LOGIN TO YOUR ACCOUNT</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div style="font-size: 32px; font-weight: bold; color: navy; text-align: center;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
 
         email = st.text_input("Email Address")
         password = st.text_input("Password", type="password")
@@ -244,24 +216,21 @@ def login(navigate_to):
             else:
                 st.error("Invalid email or password.")
 
-        st.markdown(
-            """
+        st.markdown("""
             <div style="text-align: center; font-size: 13px; color: #333;">
                 Don’t have an account? 
                 <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold;">Forgot Password?</a>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        """, unsafe_allow_html=True)
 
         if st.button("Click here to Sign Up"):
             navigate_to("User_Registration")
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# Example standalone usage for testing
-if __name__ == "__main__":
-    DatabaseConnection.initialize_pool()
+# Example usage for standalone testing
+if __name__ == '__main__':
+    DatabaseConnection.initialize_pool() # Initialize the pool when the app starts
 
     def dummy_navigate_to(page_name):
         st.success(f"Navigating to {page_name} (dummy)")
