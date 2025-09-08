@@ -8,14 +8,15 @@ import boto3
 import json
 
 # ---------- FILE PATHS ----------
-bg_path = "images/background.jpg"
-logo_path = "images/vtara.png"
+bg_path = "images/background.jpg"  # Ensure this path is correct
+logo_path = "images/vtara.png"     # Ensure this path is correct
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
 @st.cache_data(ttl=600)
 def get_aws_secrets():
+    """Fetches application secrets from AWS Secrets Manager and caches them."""
     secret_name = "production/vclarifi/app_secrets"
-    region_name = "us-east-1"
+    region_name = "us-east-1"  # Change to your AWS region if different
 
     session = boto3.session.Session()
     client = session.client(service_name='secretsmanager', region_name=region_name)
@@ -28,93 +29,75 @@ def get_aws_secrets():
         st.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
         return None
 
-# --- DATABASE CONNECTION WITH POOLING ---
+# --- REFINED DATABASE CONNECTION CLASS WITH POOLING ---
 class DatabaseConnection:
     _pool = None
 
     @classmethod
     def initialize_pool(cls):
+        """Initializes the database connection pool."""
         if cls._pool is None:
             secrets = get_aws_secrets()
             if not secrets:
-                st.error("❌ Could not load secrets from AWS Secrets Manager.")
-                return
-
-            db_secrets = secrets.get("database")
-            if not db_secrets:
-                st.error("❌ 'database' section is missing in your AWS secrets.")
-                return
-
-            required_keys = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_DATABASE"]
-            missing_keys = [k for k in required_keys if not db_secrets.get(k)]
-            if missing_keys:
-                st.error(f"❌ Missing keys in 'database' secret: {', '.join(missing_keys)}")
+                st.error("Could not load secrets from AWS. Database connection pool failed.")
                 return
 
             try:
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
                     pool_size=5,
-                    host=db_secrets["DB_HOST"],
-                    user=db_secrets["DB_USER"],
-                    password=db_secrets["DB_PASSWORD"],
-                    database=db_secrets["DB_DATABASE"]
+                    host=secrets.get("DB_HOST"),
+                    user=secrets.get("DB_USER"),
+                    password=secrets.get("DB_PASSWORD"),
+                    database=secrets.get("DB_DATABASE")
                 )
             except mysql.connector.Error as err:
-                st.error("❌ MySQL connection pool initialization failed.")
-                st.exception(err)
-                cls._pool = None
+                st.error(f"Database connection pool error: {err}")
+                cls._pool = None # Ensure pool is None on failure
 
     @classmethod
     def get_connection(cls):
+        """Gets a connection from the pool."""
         if cls._pool is None:
             cls.initialize_pool()
 
         if cls._pool:
-            try:
-                return cls._pool.get_connection()
-            except mysql.connector.Error as err:
-                st.error("❌ Could not get DB connection from pool.")
-                st.exception(err)
+            return cls._pool.get_connection()
         return None
 
-# --- LOGIN CHECK FUNCTION ---
+# --- UPDATED LOGIN CHECK FUNCTION ---
 def check_login(email, password):
+    """Checks user credentials against the database using a connection from the pool."""
     conn = None
     cursor = None
     try:
         conn = DatabaseConnection.get_connection()
         if not conn:
-            return False
+            return False  # Failed to get connection from pool
 
         cursor = conn.cursor()
         cursor.execute("SELECT Password FROM user_registration WHERE Email_Id = %s", (email,))
         result = cursor.fetchone()
 
-        if not result:
-            st.warning("⚠️ No user found with this email.")
-            return False
+        if result and result[0]:
+            stored_hashed_password = result[0]
+            if isinstance(stored_hashed_password, str):
+                stored_hashed_password = stored_hashed_password.encode('utf-8')
 
-        stored_hashed_password = result[0]
-        if isinstance(stored_hashed_password, str):
-            stored_hashed_password = stored_hashed_password.encode('utf-8')
-
-        if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
-            return True
-        else:
-            st.warning("⚠️ Password does not match.")
-            return False
+            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
+                return True
 
     except mysql.connector.Error as err:
-        st.error(f"❌ Database query error during login: {err}")
+        st.error(f"Database query error during login: {err}")
     except Exception as e:
-        st.error(f"❌ Unexpected error during login: {e}")
+        st.error(f"An unexpected error occurred during login: {e}")
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
-            conn.close()
+            conn.close() # This returns the connection to the pool
     return False
+
 
 # ---------- UI STYLING ----------
 def set_background(image_path):
@@ -133,6 +116,9 @@ def set_background(image_path):
             [data-testid="stHeader"] {{
                 background: rgba(0, 0, 0, 0);
             }}
+            .branding img {{
+                width: 80px;
+            }}
             .stButton>button {{
                 width: 100%;
                 padding: 15px;
@@ -140,6 +126,13 @@ def set_background(image_path):
                 border-radius: 8px;
                 background-color: #2c662d;
                 color: white;
+            }}
+            .category-container.completed {{
+                background-color: #007BFF20 !important;
+                border: 2px solid #007BFF;
+                border-radius: 10px;
+                padding: 10px;
+                margin-bottom: 10px;
             }}
             </style>
         """, unsafe_allow_html=True)
@@ -171,9 +164,16 @@ def apply_styles():
         </style>
     """, unsafe_allow_html=True)
 
-# ---------- LOGIN PAGE FUNCTION ----------
-def login(navigate_to=None):
+# ---------- LOGIN FUNCTION ----------
+def login(navigate_to):
     st.set_page_config(layout="wide")
+
+    if "page" in st.query_params:
+        page_value = st.query_params.get("page")
+        if page_value == "forgot":
+            del st.query_params["page"]
+            navigate_to("forgot")
+            return
 
     set_background(bg_path)
     apply_styles()
@@ -211,11 +211,10 @@ def login(navigate_to=None):
                 st.error("Both fields are required!")
             elif check_login(email, password):
                 st.session_state.user_email = email
-                st.success("✅ Login successful!")
-                if navigate_to:
-                    navigate_to("Survey")
+                st.success("Welcome!")
+                navigate_to("Survey")
             else:
-                st.error("❌ Invalid email or password.")
+                st.error("Invalid email or password.")
 
         st.markdown("""
             <div style="text-align: center; font-size: 13px; color: #333;">
@@ -225,15 +224,13 @@ def login(navigate_to=None):
         """, unsafe_allow_html=True)
 
         if st.button("Click here to Sign Up"):
-            if navigate_to:
-                navigate_to("User_Registration")
+            navigate_to("User_Registration")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-
-# ---------- FOR LOCAL TESTING ----------
+# Example usage for standalone testing
 if __name__ == '__main__':
-    DatabaseConnection.initialize_pool()
+    DatabaseConnection.initialize_pool() # Initialize the pool when the app starts
 
     def dummy_navigate_to(page_name):
         st.success(f"Navigating to {page_name} (dummy)")
