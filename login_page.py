@@ -8,15 +8,14 @@ import boto3
 import json
 
 # ---------- FILE PATHS ----------
-bg_path = "images/background.jpg"  # Ensure this path is correct
-logo_path = "images/vtara.png"     # Ensure this path is correct
+bg_path = "images/background.jpg"
+logo_path = "images/vtara.png"
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
 @st.cache_data(ttl=600)
 def get_aws_secrets():
-    """Fetches application secrets from AWS Secrets Manager and caches them."""
     secret_name = "production/vclarifi/app_secrets"
-    region_name = "us-east-1"  # Change to your AWS region if different
+    region_name = "us-east-1"
 
     session = boto3.session.Session()
     client = session.client(service_name='secretsmanager', region_name=region_name)
@@ -29,26 +28,23 @@ def get_aws_secrets():
         st.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
         return None
 
-# --- REFINED DATABASE CONNECTION CLASS WITH POOLING ---
+# --- DATABASE CONNECTION WITH POOLING ---
 class DatabaseConnection:
     _pool = None
 
     @classmethod
     def initialize_pool(cls):
-        """Initializes the database connection pool."""
         if cls._pool is None:
             secrets = get_aws_secrets()
             if not secrets:
                 st.error("❌ Could not load secrets from AWS Secrets Manager.")
                 return
 
-            # ✅ Load the nested "database" section
             db_secrets = secrets.get("database")
             if not db_secrets:
                 st.error("❌ 'database' section is missing in your AWS secrets.")
                 return
 
-            # ✅ Check for required keys
             required_keys = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_DATABASE"]
             missing_keys = [k for k in required_keys if not db_secrets.get(k)]
             if missing_keys:
@@ -64,7 +60,6 @@ class DatabaseConnection:
                     password=db_secrets["DB_PASSWORD"],
                     database=db_secrets["DB_DATABASE"]
                 )
-                st.success("✅ Database connection pool initialized successfully.")
             except mysql.connector.Error as err:
                 st.error("❌ MySQL connection pool initialization failed.")
                 st.exception(err)
@@ -72,7 +67,6 @@ class DatabaseConnection:
 
     @classmethod
     def get_connection(cls):
-        """Gets a connection from the pool."""
         if cls._pool is None:
             cls.initialize_pool()
 
@@ -84,37 +78,42 @@ class DatabaseConnection:
                 st.exception(err)
         return None
 
-# --- UPDATED LOGIN CHECK FUNCTION ---
+# --- LOGIN CHECK FUNCTION ---
 def check_login(email, password):
-    """Checks user credentials against the database using a connection from the pool."""
     conn = None
     cursor = None
     try:
         conn = DatabaseConnection.get_connection()
         if not conn:
-            return False  # Failed to get connection from pool
+            return False
 
         cursor = conn.cursor()
         cursor.execute("SELECT Password FROM user_registration WHERE Email_Id = %s", (email,))
         result = cursor.fetchone()
 
-        if result and result[0]:
-            stored_hashed_password = result[0]
-            if isinstance(stored_hashed_password, str):
-                stored_hashed_password = stored_hashed_password.encode('utf-8')
+        if not result:
+            st.warning("⚠️ No user found with this email.")
+            return False
 
-            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
-                return True
+        stored_hashed_password = result[0]
+        if isinstance(stored_hashed_password, str):
+            stored_hashed_password = stored_hashed_password.encode('utf-8')
+
+        if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
+            return True
+        else:
+            st.warning("⚠️ Password does not match.")
+            return False
 
     except mysql.connector.Error as err:
-        st.error(f"Database query error during login: {err}")
+        st.error(f"❌ Database query error during login: {err}")
     except Exception as e:
-        st.error(f"An unexpected error occurred during login: {e}")
+        st.error(f"❌ Unexpected error during login: {e}")
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
-            conn.close()  # Return connection to pool
+            conn.close()
     return False
 
 # ---------- UI STYLING ----------
@@ -134,9 +133,6 @@ def set_background(image_path):
             [data-testid="stHeader"] {{
                 background: rgba(0, 0, 0, 0);
             }}
-            .branding img {{
-                width: 80px;
-            }}
             .stButton>button {{
                 width: 100%;
                 padding: 15px;
@@ -144,13 +140,6 @@ def set_background(image_path):
                 border-radius: 8px;
                 background-color: #2c662d;
                 color: white;
-            }}
-            .category-container.completed {{
-                background-color: #007BFF20 !important;
-                border: 2px solid #007BFF;
-                border-radius: 10px;
-                padding: 10px;
-                margin-bottom: 10px;
             }}
             </style>
         """, unsafe_allow_html=True)
@@ -182,16 +171,9 @@ def apply_styles():
         </style>
     """, unsafe_allow_html=True)
 
-# ---------- LOGIN FUNCTION ----------
-def login(navigate_to):
+# ---------- LOGIN PAGE FUNCTION ----------
+def login(navigate_to=None):
     st.set_page_config(layout="wide")
-
-    if "page" in st.query_params:
-        page_value = st.query_params.get("page")
-        if page_value == "forgot":
-            del st.query_params["page"]
-            navigate_to("forgot")
-            return
 
     set_background(bg_path)
     apply_styles()
@@ -229,29 +211,15 @@ def login(navigate_to):
                 st.error("Both fields are required!")
             elif check_login(email, password):
                 st.session_state.user_email = email
-                st.success("Welcome!")
-                navigate_to("Survey")
+                st.success("✅ Login successful!")
+                if navigate_to:
+                    navigate_to("Survey")
             else:
-                st.error("Invalid email or password.")
+                st.error("❌ Invalid email or password.")
 
         st.markdown("""
             <div style="text-align: center; font-size: 13px; color: #333;">
                 Don’t have an account? 
                 <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold;">Forgot Password?</a>
             </div>
-        """, unsafe_allow_html=True)
-
-        if st.button("Click here to Sign Up"):
-            navigate_to("User_Registration")
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# ---------- STANDALONE USAGE (OPTIONAL FOR LOCAL TESTING) ----------
-if __name__ == '__main__':
-    DatabaseConnection.initialize_pool()  # Initialize pool on startup
-
-    def dummy_navigate_to(page_name):
-        st.success(f"Navigating to {page_name} (dummy)")
-        st.stop()
-
-    login(dummy_navigate_to)
+        """
