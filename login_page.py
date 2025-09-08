@@ -222,4 +222,21 @@ def login(navigate_to=None):
                 Don’t have an account? 
                 <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold;">Forgot Password?</a>
             </div>
-        """
+        """, unsafe_allow_html=True)
+
+        if st.button("Click here to Sign Up"):
+            if navigate_to:
+                navigate_to("User_Registration")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ---------- FOR LOCAL TESTING ----------
+if __name__ == '__main__':
+    DatabaseConnection.initialize_pool()
+
+    def dummy_navigate_to(page_name):
+        st.success(f"Navigating to {page_name} (dummy)")
+        st.stop()
+
+    login(dummy_navigate_to)
