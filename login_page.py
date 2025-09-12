@@ -49,6 +49,7 @@ class DatabaseConnection:
                     host=secrets.get("DB_HOST"),
                     user=secrets.get("DB_USER"),
                     password=secrets.get("DB_PASSWORD"),
+                    port=secrets.get("DB_PORT"),
                     database=secrets.get("DB_DATABASE")
                 )
             except mysql.connector.Error as err:
