@@ -6,17 +6,18 @@ from mysql.connector import pooling
 import bcrypt
 import boto3
 import json
+import os
 
 # ---------- FILE PATHS ----------
 bg_path = "images/background.jpg"  # Ensure this path is correct
-logo_path = "images/VTARA.png"     # Ensure this path is correct
+logo_path = "images/VTARA.png"      # Ensure this path is correct
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
 @st.cache_data(ttl=600)
 def get_aws_secrets():
     """Fetches application secrets from AWS Secrets Manager and caches them."""
-    secret_name = "production/vclarifi/app_secrets"
-    region_name = "us-east-1"  # Change to your AWS region if different
+    secret_name = "production/vclarifi/secrets"
+    region_name = os.environ.get("AWS_REGION", "us-east-1")
 
     session = boto3.session.Session()
     client = session.client(service_name='secretsmanager', region_name=region_name)
@@ -42,14 +43,18 @@ class DatabaseConnection:
                 st.error("Could not load secrets from AWS. Database connection pool failed.")
                 return
             
+            # Access secrets using nested get() for safety
+            db_secrets = secrets.get("database", {})
+            
             try:
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
                     pool_size=5,
-                    host=secrets.get("DB_HOST"),
-                    user=secrets.get("DB_USER"),
-                    password=secrets.get("DB_PASSWORD"),
-                    database=secrets.get("DB_DATABASE")
+                    host=db_secrets.get("DB_HOST"),
+                    user=db_secrets.get("DB_USER"),
+                    password=db_secrets.get("DB_PASSWORD"),
+                    port=db_secrets.get("DB_PORT", 3306),  # Fallback to default MySQL port
+                    database=db_secrets.get("DB_DATABASE")
                 )
             except mysql.connector.Error as err:
                 st.error(f"Database connection pool error: {err}")
@@ -97,7 +102,6 @@ def check_login(email, password):
         if conn and conn.is_connected():
             conn.close() # This returns the connection to the pool
     return False
-
 
 # ---------- UI STYLING ----------
 def set_background(image_path):
@@ -168,13 +172,10 @@ def apply_styles():
 def login(navigate_to):
     st.set_page_config(layout="wide")
 
-    if "page" in st.query_params:
-        page_value = st.query_params.get("page")
-        if page_value == "forgot":
-            del st.query_params["page"]
-            navigate_to("forgot")
-            return
-
+    if st.query_params.get("page") == "forgot":
+        st.query_params.clear()
+        st.rerun()
+        
     set_background(bg_path)
     apply_styles()
 
