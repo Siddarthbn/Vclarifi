@@ -43,33 +43,24 @@ class DatabaseConnection:
                 st.error("Could not load secrets from AWS. Database connection pool failed.")
                 return
             
-            # Access secrets using nested get() for safety
-            db_secrets = secrets.get("database", {})
-            
             try:
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
                     pool_size=5,
-                    host=db_secrets.get("DB_HOST"),
-                    user=db_secrets.get("DB_USER"),
-                    password=db_secrets.get("DB_PASSWORD"),
-                    port=int(db_secrets.get("DB_PORT")), 
-                    database=db_secrets.get("DB_DATABASE")
+                    host=secrets.get("DB_HOST"),
+                    user=secrets.get("DB_USER"),
+                    password=secrets.get("DB_PASSWORD"),
+                    # Provide a default value (3306) if DB_PORT is missing or None
+                    port=int(secrets.get("DB_PORT", 3306)),
+                    database=secrets.get("DB_DATABASE")
                 )
             except mysql.connector.Error as err:
                 st.error(f"Database connection pool error: {err}")
                 cls._pool = None # Ensure pool is None on failure
-
-    @classmethod
-    def get_connection(cls):
-        """Gets a connection from the pool."""
-        if cls._pool is None:
-            cls.initialize_pool()
-        
-        if cls._pool:
-            return cls._pool.get_connection()
-        return None
-
+            except (TypeError, ValueError) as err:
+                # Catch the specific error related to the int() conversion
+                st.error(f"Configuration Error: {err}. Ensure DB_PORT is a valid number in your secrets.")
+                cls._pool = None
 # --- UPDATED LOGIN CHECK FUNCTION ---
 def check_login(email, password):
     """Checks user credentials against the database using a connection from the pool."""
