@@ -22,7 +22,7 @@ LOGO_IMAGE_PATH = "images/VTARA.png"    # Ensure this path is correct for your s
 def get_aws_secrets():
     """
     Fetches application secrets from AWS Secrets Manager.
-    Assumes the secret is stored as a single JSON object.
+    Assumes the secret is a single JSON object.
     """
     secret_name = "production/vclarifi/secrets"
     region_name = os.environ.get("AWS_REGION", "us-east-1")
@@ -42,31 +42,39 @@ def get_aws_secrets():
         st.error("Application configuration failed to load. Please check logs.")
         return None
 
-# --- GET SECRETS ---
+# --- GLOBAL CONFIGURATION (ROBUST STARTUP) ---
 secrets = get_aws_secrets()
 
-# Check if secrets were loaded successfully
-if secrets:
-    # --- DATABASE CONFIGURATION ---
-    DB_HOST = secrets.get("DB_HOST")
-    DB_DATABASE = secrets.get("DB_DATABASE")
-    DB_USER = secrets.get("DB_USER")
-    DB_PASSWORD = secrets.get("DB_PASSWORD")
-    # Retrieve DB_PORT and handle cases where it's missing or not an integer
-    try:
-        DB_PORT = int(secrets.get("DB_PORT", 3306))
-    except (TypeError, ValueError):
-        logging.warning("DB_PORT is not a valid integer. Defaulting to 3306.")
-        DB_PORT = 3306
+# Default to None if secrets could not be loaded
+DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = DB_PORT = None
+SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
 
-    # --- EMAIL CONFIGURATION ---
-    SENDER_EMAIL = secrets.get("SENDER_EMAIL")
-    SENDER_APP_PASSWORD = secrets.get("SENDER_APP_PASSWORD")
-    SMTP_SERVER = secrets.get("SMTP_SERVER")
-    SMTP_PORT = secrets.get("SMTP_PORT")
+if secrets:
+    try:
+        # --- DATABASE CONFIGURATION ---
+        DB_HOST = secrets.get("DB_HOST")
+        DB_DATABASE = secrets.get("DB_DATABASE")
+        DB_USER = secrets.get("DB_USER")
+        DB_PASSWORD = secrets.get("DB_PASSWORD")
+        # Ensure DB_PORT is an integer, defaulting to 3306 if it's missing or invalid
+        DB_PORT = int(secrets.get("DB_PORT", 3306))
+
+        # --- EMAIL CONFIGURATION ---
+        SENDER_EMAIL = secrets.get("SENDER_EMAIL")
+        SENDER_APP_PASSWORD = secrets.get("SENDER_APP_PASSWORD")
+        SMTP_SERVER = secrets.get("SMTP_SERVER")
+        SMTP_PORT = secrets.get("SMTP_PORT")
+
+    except (TypeError, ValueError, KeyError) as e:
+        logging.critical(f"FATAL: Missing or invalid key in AWS secret. Error: {e}")
+        st.error("Application configuration failed. Check secret contents.")
+        st.stop()
+        
+    logging.info("Configuration secrets loaded successfully.")
+
 else:
     # This block is executed if get_aws_secrets returns None
-    st.stop() # Stops the app from running further if secrets aren't available
+    st.stop()
 
 # --- UI Utility Functions ---
 def encode_image_to_base64(image_path):
