@@ -13,9 +13,6 @@ import os
 from email.mime.text import MIMEText # For creating email messages
 import boto3
 
-# --- LOGGING CONFIGURATION ---
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
-
 # --- BEGIN SHARED CONFIGURATION AND UTILS ---
 BG_IMAGE_PATH = "images/background.jpg" # Ensure this path is correct for your system
 LOGO_IMAGE_PATH = "images/VTARA.png"    # Ensure this path is correct for your system
