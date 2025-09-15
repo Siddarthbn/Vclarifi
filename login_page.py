@@ -38,40 +38,27 @@ class DatabaseConnection:
     def initialize_pool(cls):
         """Initializes the database connection pool."""
         if cls._pool is None:
-            # Assumes get_aws_secrets() function exists and returns secrets
             secrets = get_aws_secrets()
             if not secrets:
                 st.error("Could not load secrets from AWS. Database connection pool failed.")
                 return
             
-            # Access secrets safely using nested get()
+            # Access secrets using nested get() for safety
             db_secrets = secrets.get("database", {})
             
             try:
-                # The port value must be an integer. We get it, and if it's not present or
-                # an invalid type, we default to the standard MySQL port 3306.
-                db_port = db_secrets.get("DB_PORT")
-                if db_port is not None:
-                    db_port = int(db_port)
-                else:
-                    db_port = 3306
-                
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
                     pool_size=5,
                     host=db_secrets.get("DB_HOST"),
                     user=db_secrets.get("DB_USER"),
                     password=db_secrets.get("DB_PASSWORD"),
-                    port=db_port,
+                    port=db_secrets.get("DB_PORT", 3306),  # Fallback to default MySQL port
                     database=db_secrets.get("DB_DATABASE")
                 )
-                
             except mysql.connector.Error as err:
                 st.error(f"Database connection pool error: {err}")
-                cls._pool = None
-            except (TypeError, ValueError) as err:
-                st.error(f"Configuration Error: Invalid port number. Check your secret's DB_PORT value. Error: {err}")
-                cls._pool = None
+                cls._pool = None # Ensure pool is None on failure
 
     @classmethod
     def get_connection(cls):
@@ -80,13 +67,41 @@ class DatabaseConnection:
             cls.initialize_pool()
         
         if cls._pool:
-            try:
-                # The get_connection() method returns an active connection
-                return cls._pool.get_connection()
-            except mysql.connector.Error as err:
-                st.error(f"Error getting connection from pool: {err}")
-                return None
+            return cls._pool.get_connection()
         return None
+
+# --- UPDATED LOGIN CHECK FUNCTION ---
+def check_login(email, password):
+    """Checks user credentials against the database using a connection from the pool."""
+    conn = None
+    cursor = None
+    try:
+        conn = DatabaseConnection.get_connection()
+        if not conn:
+            return False  # Failed to get connection from pool
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT Password FROM user_registration WHERE Email_Id = %s", (email,))
+        result = cursor.fetchone()
+
+        if result and result[0]:
+            stored_hashed_password = result[0]
+            if isinstance(stored_hashed_password, str):
+                stored_hashed_password = stored_hashed_password.encode('utf-8')
+            
+            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
+                return True
+            
+    except mysql.connector.Error as err:
+        st.error(f"Database query error during login: {err}")
+    except Exception as e:
+        st.error(f"An unexpected error occurred during login: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close() # This returns the connection to the pool
+    return False
 
 # ---------- UI STYLING ----------
 def set_background(image_path):
@@ -153,15 +168,14 @@ def apply_styles():
         </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIN FUNCTION ---
+# ---------- LOGIN FUNCTION ----------
 def login(navigate_to):
-    # Initialize session state variables if they don't exist
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-    if "current_page" not in st.session_state:
-        st.session_state.current_page = "login"
+    st.set_page_config(layout="wide")
 
-    # Set the UI background and styles
+    if st.query_params.get("page") == "forgot":
+        st.query_params.clear()
+        st.rerun()
+        
     set_background(bg_path)
     apply_styles()
 
@@ -171,7 +185,18 @@ def login(navigate_to):
         try:
             logo_image = Image.open(logo_path)
             st.image(logo_image, width=300)
-            st.markdown(""" ... (your left-column UI) ... """, unsafe_allow_html=True)
+            st.markdown("""
+            <div class="left-info">
+                <div class="inline-info">
+                    <div><b>📞 Phone:</b> +123-456-7890</div>
+                    <div><b>✉️ E-Mail:</b> hello@vclarifi.com</div>
+                </div>
+                <div class="inline-info">
+                    <div><b>🌐 Website:</b> www.vclarifi.com</div>
+                    <div><b>📍 Address:</b> Canberra, Australia</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
         except FileNotFoundError:
             st.error(f"Logo image not found at {logo_path}")
 
@@ -185,19 +210,25 @@ def login(navigate_to):
         if st.button("LOGIN"):
             if not email or not password:
                 st.error("Both fields are required!")
-            # Call the check_login function to authenticate the user
             elif check_login(email, password):
                 st.session_state.user_email = email
-                st.session_state.logged_in = True
-                st.session_state.current_page = "survey" # Set the page state to 'survey'
-                st.success("Welcome! Redirecting...")
-                st.rerun() # Force Streamlit to rerun the script immediately
+                st.success("Welcome!")
+                navigate_to("Survey")
             else:
                 st.error("Invalid email or password.")
-        
-        st.markdown(""" ... (your 'Forgot Password' and 'Sign Up' links) ... """, unsafe_allow_html=True)
+
+        st.markdown("""
+            <div style="text-align: center; font-size: 13px; color: #333;">
+                Don’t have an account? 
+                <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold;">Forgot Password?</a>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if st.button("Click here to Sign Up"):
+            navigate_to("User_Registration")
 
         st.markdown('</div>', unsafe_allow_html=True)
+
 # Example usage for standalone testing
 if __name__ == '__main__':
     DatabaseConnection.initialize_pool() # Initialize the pool when the app starts
