@@ -103,8 +103,8 @@ def survey(navigate_to, user_email):
 
     # --- Paths ---
     # TODO: Update these paths to be correct for your environment
-    bg_path = "C:/Users/DELL/Desktop/background.jpg"
-    logo_path = "C:/Users/DELL/Desktop/VTARA.png"
+    bg_path = "images/background.jpg"
+    logo_path = "images/VTARA.png"
 
     # --- Constants ---
     MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
