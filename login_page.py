@@ -9,7 +9,7 @@ import json
 
 # ---------- FILE PATHS ----------
 bg_path = "images/background.jpg"  # Ensure this path is correct
-logo_path = "images/vtara.png"     # Ensure this path is correct
+logo_path = "images/vtara.png"      # Ensure this path is correct
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
 @st.cache_data(ttl=600)
@@ -173,6 +173,8 @@ def login(navigate_to):
         page_value = st.query_params.get("page")
         if page_value == "forgot":
             del st.query_params["page"]
+            # The st.experimental_rerun() call for this is no longer needed
+            # as the URL parameter is being handled.
             navigate_to("forgot")
             return
 
