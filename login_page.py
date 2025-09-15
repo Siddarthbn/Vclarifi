@@ -38,61 +38,55 @@ class DatabaseConnection:
     def initialize_pool(cls):
         """Initializes the database connection pool."""
         if cls._pool is None:
+            # Assumes get_aws_secrets() function exists and returns secrets
             secrets = get_aws_secrets()
             if not secrets:
                 st.error("Could not load secrets from AWS. Database connection pool failed.")
                 return
             
+            # Access secrets safely using nested get()
+            db_secrets = secrets.get("database", {})
+            
             try:
+                # The port value must be an integer. We get it, and if it's not present or
+                # an invalid type, we default to the standard MySQL port 3306.
+                db_port = db_secrets.get("DB_PORT")
+                if db_port is not None:
+                    db_port = int(db_port)
+                else:
+                    db_port = 3306
+                
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
                     pool_size=5,
-                    host=secrets.get("DB_HOST"),
-                    user=secrets.get("DB_USER"),
-                    password=secrets.get("DB_PASSWORD"),
-                    # Provide a default value (3306) if DB_PORT is missing or None
-                    port=int(secrets.get("DB_PORT", 3306)),
-                    database=secrets.get("DB_DATABASE")
+                    host=db_secrets.get("DB_HOST"),
+                    user=db_secrets.get("DB_USER"),
+                    password=db_secrets.get("DB_PASSWORD"),
+                    port=db_port,
+                    database=db_secrets.get("DB_DATABASE")
                 )
+                
             except mysql.connector.Error as err:
                 st.error(f"Database connection pool error: {err}")
-                cls._pool = None # Ensure pool is None on failure
-            except (TypeError, ValueError) as err:
-                # Catch the specific error related to the int() conversion
-                st.error(f"Configuration Error: {err}. Ensure DB_PORT is a valid number in your secrets.")
                 cls._pool = None
-# --- UPDATED LOGIN CHECK FUNCTION ---
-def check_login(email, password):
-    """Checks user credentials against the database using a connection from the pool."""
-    conn = None
-    cursor = None
-    try:
-        conn = DatabaseConnection.get_connection()
-        if not conn:
-            return False  # Failed to get connection from pool
+            except (TypeError, ValueError) as err:
+                st.error(f"Configuration Error: Invalid port number. Check your secret's DB_PORT value. Error: {err}")
+                cls._pool = None
 
-        cursor = conn.cursor()
-        cursor.execute("SELECT Password FROM user_registration WHERE Email_Id = %s", (email,))
-        result = cursor.fetchone()
-
-        if result and result[0]:
-            stored_hashed_password = result[0]
-            if isinstance(stored_hashed_password, str):
-                stored_hashed_password = stored_hashed_password.encode('utf-8')
-            
-            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
-                return True
-            
-    except mysql.connector.Error as err:
-        st.error(f"Database query error during login: {err}")
-    except Exception as e:
-        st.error(f"An unexpected error occurred during login: {e}")
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close() # This returns the connection to the pool
-    return False
+    @classmethod
+    def get_connection(cls):
+        """Gets a connection from the pool."""
+        if cls._pool is None:
+            cls.initialize_pool()
+        
+        if cls._pool:
+            try:
+                # The get_connection() method returns an active connection
+                return cls._pool.get_connection()
+            except mysql.connector.Error as err:
+                st.error(f"Error getting connection from pool: {err}")
+                return None
+        return None
 
 # ---------- UI STYLING ----------
 def set_background(image_path):
