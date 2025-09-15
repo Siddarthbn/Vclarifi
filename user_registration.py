@@ -1,6 +1,5 @@
 import streamlit as st
 import datetime
-import os
 import base64
 import mysql.connector
 from mysql.connector import Error
