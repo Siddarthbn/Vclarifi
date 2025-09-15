@@ -12,83 +12,80 @@ import numpy as np
 import logging
 import boto3
 
+import streamlit as st
+import logging
+import boto3
+import json
+import os
+import user_registration_2
+
+# --- LOGGING CONFIGURATION ---
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
-# Cache the secrets for 10 minutes to avoid repeated API calls
 @st.cache_data(ttl=600)
-def get_aws_secrets(secret_name: str, region_name: str):
+def get_aws_secrets():
     """
-    Fetches a secret from AWS Secrets Manager and caches the result.
-    The secret is expected to be a single JSON object.
-    
-    Args:
-        secret_name (str): The name of the secret in Secrets Manager.
-        region_name (str): The AWS region where the secret is stored.
-    
-    Returns:
-        dict: A dictionary containing the secret key-value pairs, or None on failure.
+    Fetches application secrets from AWS Secrets Manager.
+    This function is designed for secrets stored as individual key-value pairs
+    (not a single JSON object).
     """
+    secret_name = "production/vclarifi/secrets"
+    region_name = os.environ.get("AWS_REGION", "us-east-1")
+
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+
+    secrets = {}
     try:
-        session = boto3.session.Session()
-        client = session.client(
-            service_name='secretsmanager',
-            region_name=region_name
-        )
-        
+        # Get a list of all secret versions to find the latest
+        # Note: This is a simplified approach. A more robust solution might
+        # iterate through a list of expected secret keys.
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
         secret_string = get_secret_value_response['SecretString']
+        
+        # In this scenario, the SecretString is the value itself.
+        # But we need to handle individual keys, so this approach is simplified
+        # assuming the image shows the UI representation and not the raw SecretString.
+        # The correct way is to fetch each key as a separate secret or
+        # retrieve a JSON object containing all key-value pairs.
+        
+        # A more direct approach to mimic your UI screenshot is to assume a JSON structure.
+        # The image shows key-value pairs, which in Secrets Manager UI
+        # are stored as a single JSON object. So, let's revert to the JSON parsing.
+        # Your initial approach was correct. The issue is likely the secret value itself.
         return json.loads(secret_string)
     except Exception as e:
-        logging.critical(f"FATAL: Error retrieving secret from AWS Secrets Manager: {e}")
+        st.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
         return None
 
-# ---------- LOGGING CONFIGURATION ----------
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
+# --- GET SECRETS ---
+secrets = get_aws_secrets()
 
-# ---------- GLOBAL CONFIGURATION (ROBUST STARTUP) ----------
-# Define the secret name and region
-AWS_SECRET_NAME = "production/vclarifi/secrets"
-AWS_REGION = "us-east-1" # Make sure this matches your secret's region
-
-# This block now uses the helper function to load secrets
-secrets = get_aws_secrets(AWS_SECRET_NAME, AWS_REGION)
-
-# Check if secrets were loaded successfully.
+# Check if secrets were loaded successfully
 if secrets:
-    try:
-        # Database Configuration
-        DB_CONFIG = secrets.get("database", {})
-        DB_HOST = DB_CONFIG.get("DB_HOST")
-        DB_DATABASE = DB_CONFIG.get("DB_DATABASE")
-        DB_USER = DB_CONFIG.get("DB_USER")
-        DB_PASSWORD = DB_CONFIG.get("DB_PASSWORD")
+    # --- DATABASE CONFIGURATION ---
+    # The image shows individual keys, which are usually a part of a JSON object.
+    # The secret should be a single JSON string like `{"DB_HOST": "...", "DB_USER": "..."}`
+    database_secrets = secrets
+    DB_HOST = database_secrets.get("DB_HOST")
+    DB_DATABASE = database_secrets.get("DB_DATABASE")
+    DB_USER = database_secrets.get("DB_USER")
+    DB_PASSWORD = database_secrets.get("DB_PASSWORD")
+    DB_PORT = database_secrets.get("DB_PORT", 3306)
 
-        # Email Configuration
-        EMAIL_CONFIG = secrets.get("email", {})
-        SENDER_EMAIL = EMAIL_CONFIG.get("SENDER_EMAIL")
-        SENDER_APP_PASSWORD = EMAIL_CONFIG.get("SENDER_APP_PASSWORD")
-        SMTP_SERVER = EMAIL_CONFIG.get("SMTP_SERVER")
-        SMTP_PORT = EMAIL_CONFIG.get("SMTP_PORT")
-        
-        CONFIG_LOADED_SUCCESSFULLY = True
-        logging.info("Configuration secrets loaded successfully from AWS.")
+    # --- EMAIL CONFIGURATION ---
+    email_secrets = secrets
+    SENDER_EMAIL = email_secrets.get("SENDER_EMAIL")
+    SENDER_APP_PASSWORD = email_secrets.get("SENDER_APP_PASSWORD")
+    SMTP_SERVER = email_secrets.get("SMTP_SERVER")
+    SMTP_PORT = email_secrets.get("SMTP_PORT")
+else:
+    st.warning("Could not load secrets. Check the AWS Secrets Manager configuration and permissions.")
 
-    except (AttributeError, KeyError) as e:
-        logging.critical(f"FATAL: Missing key in AWS secret JSON. Check secret's structure. Error: {e}")
-        CONFIG_LOADED_SUCCESSFULLY = False
-else:
-    # This path is handled by the get_aws_secrets function already,
-    # but we ensure the flag is set correctly.
-    DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
-    SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
-    CONFIG_LOADED_SUCCESSFULLY = False
-    
-# Example usage (for demonstration)
-if not CONFIG_LOADED_SUCCESSFULLY:
-    st.error("Application configuration failed to load. Please check logs for details.")
-else:
-    st.success("Configuration loaded. You can now use the variables.")
-    # st.write(f"DB Host: {DB_HOST}") # Don't expose sensitive info in the UI
 
 # ---------- MAIN SURVEY FUNCTION ----------
 def survey(navigate_to, user_email):
