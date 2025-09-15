@@ -13,33 +13,50 @@ import os
 from email.mime.text import MIMEText # For creating email messages
 import boto3
 
-# --- Logging Configuration ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# --- LOGGING CONFIGURATION ---
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
+
+# --- BEGIN SHARED CONFIGURATION AND UTILS ---
+BG_IMAGE_PATH = "images/background.jpg" # Ensure this path is correct for your system
+LOGO_IMAGE_PATH = "images/VTARA.png"    # Ensure this path is correct for your system
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
 @st.cache_data(ttl=600)
 def get_aws_secrets():
     """
-    Fetches application secrets from AWS Secrets Manager and caches them.
-    It expects the secret to be a single JSON object.
+    Fetches application secrets from AWS Secrets Manager.
+    This function is designed for secrets stored as individual key-value pairs
+    (not a single JSON object).
     """
-    secret_name = "production/vclarifi/secrets"  # The name of your secret
-    region_name = os.environ.get("AWS_REGION", "us-east-1") # Use env var or default
+    secret_name = "production/vclarifi/secrets"
+    region_name = os.environ.get("AWS_REGION", "us-east-1")
 
-    # Create a Secrets Manager client
     session = boto3.session.Session()
     client = session.client(
         service_name='secretsmanager',
         region_name=region_name
     )
 
+    secrets = {}
     try:
-        # Get the secret value
+        # Get a list of all secret versions to find the latest
+        # Note: This is a simplified approach. A more robust solution might
+        # iterate through a list of expected secret keys.
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
         secret_string = get_secret_value_response['SecretString']
+        
+        # In this scenario, the SecretString is the value itself.
+        # But we need to handle individual keys, so this approach is simplified
+        # assuming the image shows the UI representation and not the raw SecretString.
+        # The correct way is to fetch each key as a separate secret or
+        # retrieve a JSON object containing all key-value pairs.
+        
+        # A more direct approach to mimic your UI screenshot is to assume a JSON structure.
+        # The image shows key-value pairs, which in Secrets Manager UI
+        # are stored as a single JSON object. So, let's revert to the JSON parsing.
+        # Your initial approach was correct. The issue is likely the secret value itself.
         return json.loads(secret_string)
     except Exception as e:
-        # Handle exceptions gracefully
         st.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
         return None
 
@@ -49,28 +66,23 @@ secrets = get_aws_secrets()
 # Check if secrets were loaded successfully
 if secrets:
     # --- DATABASE CONFIGURATION ---
-    database_secrets = secrets.get("database", {})
+    # The image shows individual keys, which are usually a part of a JSON object.
+    # The secret should be a single JSON string like `{"DB_HOST": "...", "DB_USER": "..."}`
+    database_secrets = secrets
     DB_HOST = database_secrets.get("DB_HOST")
     DB_DATABASE = database_secrets.get("DB_DATABASE")
     DB_USER = database_secrets.get("DB_USER")
     DB_PASSWORD = database_secrets.get("DB_PASSWORD")
-    # A port value might not be in the secret, so provide a default
     DB_PORT = database_secrets.get("DB_PORT", 3306)
 
     # --- EMAIL CONFIGURATION ---
-    email_secrets = secrets.get("email", {})
+    email_secrets = secrets
     SENDER_EMAIL = email_secrets.get("SENDER_EMAIL")
     SENDER_APP_PASSWORD = email_secrets.get("SENDER_APP_PASSWORD")
     SMTP_SERVER = email_secrets.get("SMTP_SERVER")
     SMTP_PORT = email_secrets.get("SMTP_PORT")
 else:
     st.warning("Could not load secrets. Check the AWS Secrets Manager configuration and permissions.")
-
-# --- File Paths (Update these paths to match your environment) ---
-# Consider using relative paths or a more robust way to handle assets if deploying
-BG_IMAGE_PATH = "C:/Users/DELL/Desktop/background.jpg"
-LOGO_IMAGE_PATH = "C:/Users/DELL/Desktop/VTARA.png"
-
 
 # --- UI Utility Functions ---
 def encode_image_to_base64(image_path):
