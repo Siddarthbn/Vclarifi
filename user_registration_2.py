@@ -10,21 +10,60 @@ import base64  # For encoding images
 import logging # For logging
 import smtplib # For sending emails
 from email.mime.text import MIMEText # For creating email messages
+import boto3
 
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Database Configuration
-DB_HOST = st.secrets.database.DB_HOST
-DB_DATABASE = st.secrets.database.DB_DATABASE
-DB_USER = st.secrets.database.DB_USER
-DB_PASSWORD = st.secrets.database.DB_PASSWORD
+# --- AWS SECRETS MANAGER HELPER FUNCTION ---
+@st.cache_data(ttl=600)
+def get_aws_secrets():
+    """
+    Fetches application secrets from AWS Secrets Manager and caches them.
+    It expects the secret to be a single JSON object.
+    """
+    secret_name = "production/vclarifi/secrets"  # The name of your secret
+    region_name = os.environ.get("AWS_REGION", "us-east-1") # Use env var or default
 
-# Email Configuration
-SENDER_EMAIL = st.secrets.email.SENDER_EMAIL
-SENDER_APP_PASSWORD = st.secrets.email.SENDER_APP_PASSWORD
-SMTP_SERVER = st.secrets.email.SMTP_SERVER
-SMTP_PORT = st.secrets.email.SMTP_PORT
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+
+    try:
+        # Get the secret value
+        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+        secret_string = get_secret_value_response['SecretString']
+        return json.loads(secret_string)
+    except Exception as e:
+        # Handle exceptions gracefully
+        st.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
+        return None
+
+# --- GET SECRETS ---
+secrets = get_aws_secrets()
+
+# Check if secrets were loaded successfully
+if secrets:
+    # --- DATABASE CONFIGURATION ---
+    database_secrets = secrets.get("database", {})
+    DB_HOST = database_secrets.get("DB_HOST")
+    DB_DATABASE = database_secrets.get("DB_DATABASE")
+    DB_USER = database_secrets.get("DB_USER")
+    DB_PASSWORD = database_secrets.get("DB_PASSWORD")
+    # A port value might not be in the secret, so provide a default
+    DB_PORT = database_secrets.get("DB_PORT", 3306)
+
+    # --- EMAIL CONFIGURATION ---
+    email_secrets = secrets.get("email", {})
+    SENDER_EMAIL = email_secrets.get("SENDER_EMAIL")
+    SENDER_APP_PASSWORD = email_secrets.get("SENDER_APP_PASSWORD")
+    SMTP_SERVER = email_secrets.get("SMTP_SERVER")
+    SMTP_PORT = email_secrets.get("SMTP_PORT")
+else:
+    st.warning("Could not load secrets. Check the AWS Secrets Manager configuration and permissions.")
 
 # --- File Paths (Update these paths to match your environment) ---
 # Consider using relative paths or a more robust way to handle assets if deploying
