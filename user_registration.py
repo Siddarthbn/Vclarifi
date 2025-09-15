@@ -21,8 +21,7 @@ LOGO_IMAGE_PATH = "images/VTARA.png"    # Ensure this path is correct for your s
 def get_aws_secrets():
     """
     Fetches application secrets from AWS Secrets Manager.
-    This function is designed for secrets stored as individual key-value pairs
-    (not a single JSON object).
+    Assumes the secret is stored as a single JSON object.
     """
     secret_name = "production/vclarifi/secrets"
     region_name = os.environ.get("AWS_REGION", "us-east-1")
@@ -33,27 +32,13 @@ def get_aws_secrets():
         region_name=region_name
     )
 
-    secrets = {}
     try:
-        # Get a list of all secret versions to find the latest
-        # Note: This is a simplified approach. A more robust solution might
-        # iterate through a list of expected secret keys.
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
         secret_string = get_secret_value_response['SecretString']
-        
-        # In this scenario, the SecretString is the value itself.
-        # But we need to handle individual keys, so this approach is simplified
-        # assuming the image shows the UI representation and not the raw SecretString.
-        # The correct way is to fetch each key as a separate secret or
-        # retrieve a JSON object containing all key-value pairs.
-        
-        # A more direct approach to mimic your UI screenshot is to assume a JSON structure.
-        # The image shows key-value pairs, which in Secrets Manager UI
-        # are stored as a single JSON object. So, let's revert to the JSON parsing.
-        # Your initial approach was correct. The issue is likely the secret value itself.
         return json.loads(secret_string)
     except Exception as e:
-        st.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
+        logging.critical(f"FATAL: Error retrieving secrets from AWS Secrets Manager: {e}")
+        st.error("Application configuration failed to load. Please check logs.")
         return None
 
 # --- GET SECRETS ---
@@ -62,24 +47,25 @@ secrets = get_aws_secrets()
 # Check if secrets were loaded successfully
 if secrets:
     # --- DATABASE CONFIGURATION ---
-    # The image shows individual keys, which are usually a part of a JSON object.
-    # The secret should be a single JSON string like `{"DB_HOST": "...", "DB_USER": "..."}`
-    database_secrets = secrets
-    DB_HOST = database_secrets.get("DB_HOST")
-    DB_DATABASE = database_secrets.get("DB_DATABASE")
-    DB_USER = database_secrets.get("DB_USER")
-    DB_PASSWORD = database_secrets.get("DB_PASSWORD")
-    DB_PORT = database_secrets.get("DB_PORT", 3306)
+    DB_HOST = secrets.get("DB_HOST")
+    DB_DATABASE = secrets.get("DB_DATABASE")
+    DB_USER = secrets.get("DB_USER")
+    DB_PASSWORD = secrets.get("DB_PASSWORD")
+    # Retrieve DB_PORT and handle cases where it's missing or not an integer
+    try:
+        DB_PORT = int(secrets.get("DB_PORT", 3306))
+    except (TypeError, ValueError):
+        logging.warning("DB_PORT is not a valid integer. Defaulting to 3306.")
+        DB_PORT = 3306
 
     # --- EMAIL CONFIGURATION ---
-    email_secrets = secrets
-    SENDER_EMAIL = email_secrets.get("SENDER_EMAIL")
-    SENDER_APP_PASSWORD = email_secrets.get("SENDER_APP_PASSWORD")
-    SMTP_SERVER = email_secrets.get("SMTP_SERVER")
-    SMTP_PORT = email_secrets.get("SMTP_PORT")
+    SENDER_EMAIL = secrets.get("SENDER_EMAIL")
+    SENDER_APP_PASSWORD = secrets.get("SENDER_APP_PASSWORD")
+    SMTP_SERVER = secrets.get("SMTP_SERVER")
+    SMTP_PORT = secrets.get("SMTP_PORT")
 else:
-    st.warning("Could not load secrets. Check the AWS Secrets Manager configuration and permissions.")
-
+    # This block is executed if get_aws_secrets returns None
+    st.stop() # Stops the app from running further if secrets aren't available
 PREDEFINED_COUNTRIES = ["Select Country", "India", "Australia"]
 COUNTRY_CITIES_MAP = {
     "India": ["Select City", "Mumbai", "Delhi", "Bengaluru", "Chennai", "Kolkata"],
