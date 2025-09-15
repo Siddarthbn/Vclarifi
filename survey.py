@@ -10,36 +10,85 @@ import smtplib
 from email.mime.text import MIMEText
 import numpy as np
 import logging
+import boto3
+
+
+# --- AWS SECRETS MANAGER HELPER FUNCTION ---
+# Cache the secrets for 10 minutes to avoid repeated API calls
+@st.cache_data(ttl=600)
+def get_aws_secrets(secret_name: str, region_name: str):
+    """
+    Fetches a secret from AWS Secrets Manager and caches the result.
+    The secret is expected to be a single JSON object.
+    
+    Args:
+        secret_name (str): The name of the secret in Secrets Manager.
+        region_name (str): The AWS region where the secret is stored.
+    
+    Returns:
+        dict: A dictionary containing the secret key-value pairs, or None on failure.
+    """
+    try:
+        session = boto3.session.Session()
+        client = session.client(
+            service_name='secretsmanager',
+            region_name=region_name
+        )
+        
+        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+        secret_string = get_secret_value_response['SecretString']
+        return json.loads(secret_string)
+    except Exception as e:
+        logging.critical(f"FATAL: Error retrieving secret from AWS Secrets Manager: {e}")
+        return None
 
 # ---------- LOGGING CONFIGURATION ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
 # ---------- GLOBAL CONFIGURATION (ROBUST STARTUP) ----------
-# This block loads secrets into global variables. If it fails, it sets them to None
-# and logs an error, preventing the app from crashing on startup.
-try:
-    # Database Configuration
-    DB_HOST = st.secrets.database.DB_HOST
-    DB_DATABASE = st.secrets.database.DB_DATABASE
-    DB_USER = st.secrets.database.DB_USER
-    DB_PASSWORD = st.secrets.database.DB_PASSWORD
+# Define the secret name and region
+AWS_SECRET_NAME = "production/vclarifi/secrets"
+AWS_REGION = "us-east-1" # Make sure this matches your secret's region
 
-    # Email Configuration
-    SENDER_EMAIL = st.secrets.email.SENDER_EMAIL
-    SENDER_APP_PASSWORD = st.secrets.email.SENDER_APP_PASSWORD
-    SMTP_SERVER = st.secrets.email.SMTP_SERVER
-    SMTP_PORT = st.secrets.email.SMTP_PORT
+# This block now uses the helper function to load secrets
+secrets = get_aws_secrets(AWS_SECRET_NAME, AWS_REGION)
 
-    CONFIG_LOADED_SUCCESSFULLY = True
-    logging.info("Configuration secrets loaded successfully.")
+# Check if secrets were loaded successfully.
+if secrets:
+    try:
+        # Database Configuration
+        DB_CONFIG = secrets.get("database", {})
+        DB_HOST = DB_CONFIG.get("DB_HOST")
+        DB_DATABASE = DB_CONFIG.get("DB_DATABASE")
+        DB_USER = DB_CONFIG.get("DB_USER")
+        DB_PASSWORD = DB_CONFIG.get("DB_PASSWORD")
 
-except (AttributeError, KeyError) as e:
-    logging.critical(f"FATAL: Could not read secrets from secrets.toml. Check file location and keys. Error: {e}")
-    # Set config variables to None so the app can still load without a NameError.
+        # Email Configuration
+        EMAIL_CONFIG = secrets.get("email", {})
+        SENDER_EMAIL = EMAIL_CONFIG.get("SENDER_EMAIL")
+        SENDER_APP_PASSWORD = EMAIL_CONFIG.get("SENDER_APP_PASSWORD")
+        SMTP_SERVER = EMAIL_CONFIG.get("SMTP_SERVER")
+        SMTP_PORT = EMAIL_CONFIG.get("SMTP_PORT")
+        
+        CONFIG_LOADED_SUCCESSFULLY = True
+        logging.info("Configuration secrets loaded successfully from AWS.")
+
+    except (AttributeError, KeyError) as e:
+        logging.critical(f"FATAL: Missing key in AWS secret JSON. Check secret's structure. Error: {e}")
+        CONFIG_LOADED_SUCCESSFULLY = False
+else:
+    # This path is handled by the get_aws_secrets function already,
+    # but we ensure the flag is set correctly.
     DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
     SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
     CONFIG_LOADED_SUCCESSFULLY = False
-
+    
+# Example usage (for demonstration)
+if not CONFIG_LOADED_SUCCESSFULLY:
+    st.error("Application configuration failed to load. Please check logs for details.")
+else:
+    st.success("Configuration loaded. You can now use the variables.")
+    # st.write(f"DB Host: {DB_HOST}") # Don't expose sensitive info in the UI
 
 # ---------- MAIN SURVEY FUNCTION ----------
 def survey(navigate_to, user_email):
