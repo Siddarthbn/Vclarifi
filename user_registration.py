@@ -8,6 +8,7 @@ import re  # Ensure re is imported
 import logging
 import smtplib
 import boto3
+import os
 from email.mime.text import MIMEText
 
 # Assuming user_registration_2.py exists or is mocked as in your __main__
