@@ -153,14 +153,16 @@ def apply_styles():
         </style>
     """, unsafe_allow_html=True)
 
-# ---------- LOGIN FUNCTION ----------
+# ---------- REFINED LOGIN FUNCTION ----------
 def login(navigate_to):
-    st.set_page_config(layout="wide")
+    # This page config should be in the main app.py, not here,
+    # to avoid warnings when switching pages.
+    # st.set_page_config(layout="wide")
 
-    if st.query_params.get("page") == "forgot":
-        st.query_params.clear()
-        st.rerun()
-        
+    # Use session_state to track page changes
+    if "page" not in st.session_state:
+        st.session_state.page = "Login"
+
     set_background(bg_path)
     apply_styles()
 
@@ -192,28 +194,31 @@ def login(navigate_to):
         email = st.text_input("Email Address")
         password = st.text_input("Password", type="password")
 
+        # Handle login button click
         if st.button("LOGIN"):
             if not email or not password:
                 st.error("Both fields are required!")
             elif check_login(email, password):
                 st.session_state.user_email = email
+                st.session_state.logged_in = True  # Set a state variable for successful login
                 st.success("Welcome!")
-                navigate_to("Survey")
+                st.rerun()  # Rerun the app to navigate to the main page
             else:
                 st.error("Invalid email or password.")
 
         st.markdown("""
             <div style="text-align: center; font-size: 13px; color: #333;">
                 Don’t have an account? 
-                <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold;">Forgot Password?</a>
+                <a href="#" onclick="window.parent.location.href = '?page=forgot';" style="color: #007BFF; font-weight: bold;">Forgot Password?</a>
             </div>
         """, unsafe_allow_html=True)
-
+        
+        # This button also sets a session state variable to trigger navigation.
         if st.button("Click here to Sign Up"):
-            navigate_to("User_Registration")
+            st.session_state.page = "User_Registration"
+            st.rerun() # Rerun to switch to the registration page
 
         st.markdown('</div>', unsafe_allow_html=True)
-
 # Example usage for standalone testing
 if __name__ == '__main__':
     DatabaseConnection.initialize_pool() # Initialize the pool when the app starts
