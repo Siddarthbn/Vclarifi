@@ -153,16 +153,15 @@ def apply_styles():
         </style>
     """, unsafe_allow_html=True)
 
-# ---------- REFINED LOGIN FUNCTION ----------
-def login(navigate_to):
-    # This page config should be in the main app.py, not here,
-    # to avoid warnings when switching pages.
-    # st.set_page_config(layout="wide")
+# --- LOGIN FUNCTION ---
+def login():
+    # Initialize session state variables if they don't exist
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "login"
 
-    # Use session_state to track page changes
-    if "page" not in st.session_state:
-        st.session_state.page = "Login"
-
+    # Set the UI background and styles
     set_background(bg_path)
     apply_styles()
 
@@ -172,18 +171,7 @@ def login(navigate_to):
         try:
             logo_image = Image.open(logo_path)
             st.image(logo_image, width=300)
-            st.markdown("""
-            <div class="left-info">
-                <div class="inline-info">
-                    <div><b>📞 Phone:</b> +123-456-7890</div>
-                    <div><b>✉️ E-Mail:</b> hello@vclarifi.com</div>
-                </div>
-                <div class="inline-info">
-                    <div><b>🌐 Website:</b> www.vclarifi.com</div>
-                    <div><b>📍 Address:</b> Canberra, Australia</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(""" ... (your left-column UI) ... """, unsafe_allow_html=True)
         except FileNotFoundError:
             st.error(f"Logo image not found at {logo_path}")
 
@@ -194,29 +182,20 @@ def login(navigate_to):
         email = st.text_input("Email Address")
         password = st.text_input("Password", type="password")
 
-        # Handle login button click
         if st.button("LOGIN"):
             if not email or not password:
                 st.error("Both fields are required!")
+            # Call the check_login function to authenticate the user
             elif check_login(email, password):
                 st.session_state.user_email = email
-                st.session_state.logged_in = True  # Set a state variable for successful login
-                st.success("Welcome!")
-                st.rerun()  # Rerun the app to navigate to the main page
+                st.session_state.logged_in = True
+                st.session_state.current_page = "survey" # Set the page state to 'survey'
+                st.success("Welcome! Redirecting...")
+                st.rerun() # Force Streamlit to rerun the script immediately
             else:
                 st.error("Invalid email or password.")
-
-        st.markdown("""
-            <div style="text-align: center; font-size: 13px; color: #333;">
-                Don’t have an account? 
-                <a href="#" onclick="window.parent.location.href = '?page=forgot';" style="color: #007BFF; font-weight: bold;">Forgot Password?</a>
-            </div>
-        """, unsafe_allow_html=True)
         
-        # This button also sets a session state variable to trigger navigation.
-        if st.button("Click here to Sign Up"):
-            st.session_state.page = "User_Registration"
-            st.rerun() # Rerun to switch to the registration page
+        st.markdown(""" ... (your 'Forgot Password' and 'Sign Up' links) ... """, unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
 # Example usage for standalone testing
