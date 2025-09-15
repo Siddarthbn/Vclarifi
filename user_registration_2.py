@@ -9,6 +9,7 @@ import re  # For email validation
 import base64  # For encoding images
 import logging # For logging
 import smtplib # For sending emails
+import os 
 from email.mime.text import MIMEText # For creating email messages
 import boto3
 
