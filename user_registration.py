@@ -11,8 +11,6 @@ import boto3
 import os
 from email.mime.text import MIMEText
 
-# --- LOGGING CONFIGURATION ---
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
 
 # --- BEGIN SHARED CONFIGURATION AND UTILS ---
 BG_IMAGE_PATH = "images/background.jpg" # Ensure this path is correct for your system
