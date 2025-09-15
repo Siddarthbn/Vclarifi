@@ -53,7 +53,7 @@ class DatabaseConnection:
                     host=db_secrets.get("DB_HOST"),
                     user=db_secrets.get("DB_USER"),
                     password=db_secrets.get("DB_PASSWORD"),
-                    port=db_secrets.get("DB_PORT", 3306),  # Fallback to default MySQL port
+                    port=db_secrets.get("DB_PORT"), 
                     database=db_secrets.get("DB_DATABASE")
                 )
             except mysql.connector.Error as err:
