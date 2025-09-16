@@ -99,10 +99,13 @@ def apply_styles():
             color: white; font-size: 16px; margin-top: 30px; padding-left: 60px;
             line-height: 2; display: flex; flex-direction: column; gap: 10px;
         }
+        /* Make the main container transparent and remove its shadow */
         .login-container {
-            background-color: rgba(255, 255, 255, 0.98); padding: 40px; border-radius: 20px;
-            width: 420px; margin-top: 100px;
-            box-shadow: 0 15px 30px rgba(0,0,0,0.25);
+            background-color: transparent;
+            padding: 40px;
+            width: 420px;
+            margin-top: 100px;
+            box-shadow: none;
         }
         .login-container .stButton > button {
             width: 100%; height: 55px; font-size: 18px; font-weight: bold; border-radius: 10px;
@@ -111,10 +114,25 @@ def apply_styles():
         }
         .bottom-links {
             display: flex; justify-content: space-between; align-items: center;
-            font-size: 14px; color: #333; margin-top: 20px;
+            font-size: 14px; color: #eee; /* Lightened color for better visibility */
+            margin-top: 20px;
         }
-        .bottom-links a { color: #007BFF; font-weight: bold; text-decoration: none; }
-        .stTextInput input { height: 55px; font-size: 16px; border-radius: 10px; }
+        .bottom-links a { color: #87CEEB; font-weight: bold; text-decoration: none; } /* Sky blue for link */
+        
+        /* Style the text input fields */
+        .stTextInput input {
+            background-color: rgba(255, 255, 255, 0.9); /* Subtle background */
+            color: #333; /* Dark text for readability */
+            height: 55px;
+            font-size: 16px;
+            border-radius: 10px;
+        }
+        /* Make the labels (Email Address, Password) white */
+        .stTextInput label {
+            color: white !important;
+            font-weight: bold !important;
+        }
+        
         .top-right-brand {
             position: fixed; top: 40px; right: 50px; font-size: 32px;
             font-weight: bold; color: white; text-shadow: 2px 2px 5px #000;
@@ -129,17 +147,6 @@ def login(navigate_to, secrets):
         st.set_page_config(layout="wide")
     except st.errors.StreamlitAPIException:
         pass # Already set
-
-    # FIX: Handle navigation from links that use query parameters FIRST
-    if "page" in st.query_params:
-        page_value = st.query_params.get("page")
-        if page_value == "forgot":
-            # Clean up the URL to prevent re-triggering on the next interaction
-            del st.query_params["page"]
-            # Call the navigation function from main.py
-            navigate_to("forgot")
-            # Stop the script to ensure the navigation completes immediately
-            st.stop()
 
     set_background(BG_IMAGE_PATH)
     apply_styles()
