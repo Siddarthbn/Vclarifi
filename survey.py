@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # --- File Paths ---
 BG_PATH = "images/background.jpg"
-LOGO_PATH = "images/vtara.png"
+LOGO_PATH = "images/VTARA.png"
 
 # --- Survey Settings ---
 MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
