@@ -8,7 +8,7 @@ import traceback
 @st.cache_data(ttl=600) # Cache secrets for 10 minutes
 def get_aws_secrets():
     """Fetches application secrets from AWS Secrets Manager."""
-    secret_name = "production/vclarifi/app_secrets"
+    secret_name = "production/vclarifi/secrets"
     region_name = "us-east-1"
     
     session = boto3.session.Session()
