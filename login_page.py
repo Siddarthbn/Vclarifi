@@ -6,18 +6,17 @@ from mysql.connector import pooling
 import bcrypt
 import boto3
 import json
-import os
 
 # ---------- FILE PATHS ----------
 bg_path = "images/background.jpg"  # Ensure this path is correct
-logo_path = "images/VTARA.png"      # Ensure this path is correct
+logo_path = "images/vtara.png"     # Ensure this path is correct
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
 @st.cache_data(ttl=600)
 def get_aws_secrets():
     """Fetches application secrets from AWS Secrets Manager and caches them."""
-    secret_name = "production/vclarifi/secrets"
-    region_name = os.environ.get("AWS_REGION", "us-east-1")
+    secret_name = "production/vclarifi/app_secrets"
+    region_name = "us-east-1"  # Change to your AWS region if different
 
     session = boto3.session.Session()
     client = session.client(service_name='secretsmanager', region_name=region_name)
@@ -43,18 +42,14 @@ class DatabaseConnection:
                 st.error("Could not load secrets from AWS. Database connection pool failed.")
                 return
             
-            # Access secrets using nested get() for safety
-            db_secrets = secrets.get("database", {})
-            
             try:
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
                     pool_size=5,
-                    host=db_secrets.get("DB_HOST"),
-                    user=db_secrets.get("DB_USER"),
-                    password=db_secrets.get("DB_PASSWORD"),
-                    port=db_secrets.get("DB_PORT", 3306),  # Fallback to default MySQL port
-                    database=db_secrets.get("DB_DATABASE")
+                    host=secrets.get("DB_HOST"),
+                    user=secrets.get("DB_USER"),
+                    password=secrets.get("DB_PASSWORD"),
+                    database=secrets.get("DB_DATABASE")
                 )
             except mysql.connector.Error as err:
                 st.error(f"Database connection pool error: {err}")
@@ -102,6 +97,7 @@ def check_login(email, password):
         if conn and conn.is_connected():
             conn.close() # This returns the connection to the pool
     return False
+
 
 # ---------- UI STYLING ----------
 def set_background(image_path):
@@ -168,14 +164,20 @@ def apply_styles():
         </style>
     """, unsafe_allow_html=True)
 
-# ---------- LOGIN FUNCTION ----------
+# ---------- REFINED LOGIN FUNCTION ----------
 def login(navigate_to):
+    # Note: st.set_page_config() should ideally be called only once at the start of your main app script.
     st.set_page_config(layout="wide")
 
-    if st.query_params.get("page") == "forgot":
-        st.query_params.clear()
-        st.rerun()
-        
+    # --- REFINED NAVIGATION HANDLING ---
+    # Handle navigation from links that use query parameters, like "Forgot Password".
+    if "page" in st.query_params:
+        page_value = st.query_params.get("page")
+        if page_value == "forgot":
+            del st.query_params["page"]  # Clean up URL
+            navigate_to("forgot")
+            st.stop()  # Stop execution to complete the navigation
+
     set_background(bg_path)
     apply_styles()
 
@@ -213,19 +215,25 @@ def login(navigate_to):
             elif check_login(email, password):
                 st.session_state.user_email = email
                 st.success("Welcome!")
+                # Navigate to the Survey page on successful login
                 navigate_to("Survey")
+                st.stop() # Stop script to ensure navigation completes
             else:
                 st.error("Invalid email or password.")
 
+        # --- REFINED UI FOR FORGOT PASSWORD AND SIGN UP ---
+        # Provides a clear, standalone link for "Forgot Password".
         st.markdown("""
-            <div style="text-align: center; font-size: 13px; color: #333;">
-                Don’t have an account? 
-                <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold;">Forgot Password?</a>
+            <div style="text-align: right; margin-top: 10px; font-size: 14px;">
+                <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold; text-decoration: none;">Forgot Password?</a>
             </div>
         """, unsafe_allow_html=True)
-
+        
+        # Provides a clear, separate option for user registration.
+        st.markdown("<div style='text-align: center; margin-top:25px; margin-bottom:10px; color: #555;'>Don't have an account?</div>", unsafe_allow_html=True)
         if st.button("Click here to Sign Up"):
             navigate_to("User_Registration")
+            st.stop()
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -235,6 +243,6 @@ if __name__ == '__main__':
     
     def dummy_navigate_to(page_name):
         st.success(f"Navigating to {page_name} (dummy)")
-        st.stop()
+        # In a real app, st.stop() would be called here after switching pages.
 
     login(dummy_navigate_to)
