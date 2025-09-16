@@ -109,10 +109,7 @@ def survey(navigate_to, user_email, secrets):
     Streamlit function to administer a multi-category survey, save responses,
     track progress, and manage admin features.
     """
-    # --- Initial Configuration Check ---
-    if not CONFIG_LOADED_SUCCESSFULLY:
-        st.error("Application is critically misconfigured. Cannot initialize survey. Please contact an administrator.")
-        return
+
 
     # --- Paths ---
     # TODO: Update these paths to be correct for your environment
