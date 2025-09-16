@@ -29,7 +29,7 @@ def get_aws_secrets():
         st.error(f"Error retrieving secrets from AWS Secrets Manager: {e}")
         return None
 
-# --- REFINED DATABASE CONNECTION CLASS WITH POOLING ---
+# --- DATABASE CONNECTION CLASS WITH POOLING ---
 class DatabaseConnection:
     _pool = None
 
@@ -39,9 +39,8 @@ class DatabaseConnection:
         if cls._pool is None:
             secrets = get_aws_secrets()
             if not secrets:
-                st.error("Could not load secrets from AWS. Database connection pool failed.")
+                st.error("Could not load secrets. DB pool failed.")
                 return
-            
             try:
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="vclarifi_pool",
@@ -53,27 +52,26 @@ class DatabaseConnection:
                 )
             except mysql.connector.Error as err:
                 st.error(f"Database connection pool error: {err}")
-                cls._pool = None # Ensure pool is None on failure
+                cls._pool = None
 
     @classmethod
     def get_connection(cls):
         """Gets a connection from the pool."""
         if cls._pool is None:
             cls.initialize_pool()
-        
         if cls._pool:
             return cls._pool.get_connection()
         return None
 
-# --- UPDATED LOGIN CHECK FUNCTION ---
+# --- LOGIN CHECK FUNCTION ---
 def check_login(email, password):
-    """Checks user credentials against the database using a connection from the pool."""
+    """Checks user credentials against the database."""
     conn = None
     cursor = None
     try:
         conn = DatabaseConnection.get_connection()
         if not conn:
-            return False  # Failed to get connection from pool
+            return False
 
         cursor = conn.cursor()
         cursor.execute("SELECT Password FROM user_registration WHERE Email_Id = %s", (email,))
@@ -83,19 +81,15 @@ def check_login(email, password):
             stored_hashed_password = result[0]
             if isinstance(stored_hashed_password, str):
                 stored_hashed_password = stored_hashed_password.encode('utf-8')
-            
             if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password):
                 return True
-            
     except mysql.connector.Error as err:
-        st.error(f"Database query error during login: {err}")
-    except Exception as e:
-        st.error(f"An unexpected error occurred during login: {e}")
+        st.error(f"Database query error: {err}")
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
-            conn.close() # This returns the connection to the pool
+            conn.close()
     return False
 
 
@@ -109,30 +103,9 @@ def set_background(image_path):
             [data-testid="stAppViewContainer"] {{
                 background-image: url("data:image/jpg;base64,{encoded}");
                 background-size: cover;
-                background-position: center;
-                background-repeat: no-repeat;
-                color: white;
             }}
             [data-testid="stHeader"] {{
                 background: rgba(0, 0, 0, 0);
-            }}
-            .branding img {{
-                width: 80px;
-            }}
-            .stButton>button {{
-                width: 100%;
-                padding: 15px;
-                font-size: 18px;
-                border-radius: 8px;
-                background-color: #2c662d;
-                color: white;
-            }}
-            .category-container.completed {{
-                background-color: #007BFF20 !important;
-                border: 2px solid #007BFF;
-                border-radius: 10px;
-                padding: 10px;
-                margin-bottom: 10px;
             }}
             </style>
         """, unsafe_allow_html=True)
@@ -140,44 +113,60 @@ def set_background(image_path):
         st.error(f"Background image not found at {image_path}")
 
 def apply_styles():
+    ## FIX: Adjusted CSS for full-width buttons and better link alignment.
     st.markdown("""
         <style>
-        .left-info {{
+        .left-info {
             color: white;
             font-size: 14px;
             margin-top: 20px;
             padding-left: 60px;
             line-height: 1.6;
-        }}
-        .inline-info {{
+        }
+        .inline-info {
             display: flex;
             gap: 20px;
-        }}
-        .login-container {{
+        }
+        .login-container {
             background-color: rgba(255, 255, 255, 0.95);
             padding: 40px;
             border-radius: 20px;
             width: 400px;
             margin-top: 80px;
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-        }}
+        }
+        /* Make buttons inside the login container full-width */
+        .login-container .stButton > button {
+            width: 100%;
+            height: 55px; /* Taller button */
+            font-size: 18px;
+        }
+        /* Style for the bottom links container */
+        .bottom-links {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            color: #333;
+            margin-top: 15px;
+        }
+        .bottom-links a {
+            color: #007BFF;
+            font-weight: bold;
+            text-decoration: none;
+        }
         </style>
     """, unsafe_allow_html=True)
 
-# ---------- REFINED LOGIN FUNCTION ----------
-# CORRECTED: Added *args and **kwargs to handle unexpected arguments gracefully.
+# ---------- LOGIN PAGE FUNCTION ----------
 def login(navigate_to, *args, **kwargs):
-    # Note: st.set_page_config() should ideally be called only once at the start of your main app script.
     st.set_page_config(layout="wide")
 
-    # --- REFINED NAVIGATION HANDLING ---
-    # Handle navigation from links that use query parameters, like "Forgot Password".
     if "page" in st.query_params:
-        page_value = st.query_params.get("page")
-        if page_value == "forgot":
-            del st.query_params["page"]  # Clean up URL
+        if st.query_params.get("page") == "forgot":
+            del st.query_params["page"]
             navigate_to("forgot")
-            st.stop()  # Stop execution to complete the navigation
+            st.stop()
 
     set_background(bg_path)
     apply_styles()
@@ -205,45 +194,34 @@ def login(navigate_to, *args, **kwargs):
 
     with col_right:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        st.markdown('<div style="font-size: 32px; font-weight: bold; color: navy; text-align: center;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size: 32px; font-weight: bold; color: navy; text-align: center; margin-bottom: 25px;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
 
-        email = st.text_input("Email Address")
-        password = st.text_input("Password", type="password")
+        ## FIX: Use st.form to prevent the "two-click" issue.
+        with st.form("login_form"):
+            email = st.text_input("Email Address", key="email")
+            password = st.text_input("Password", type="password", key="password")
+            submitted = st.form_submit_button("LOGIN")
 
-        if st.button("LOGIN"):
-            if not email or not password:
-                st.error("Both fields are required!")
-            elif check_login(email, password):
-                st.session_state.user_email = email
-                st.success("Welcome!")
-                # Navigate to the Survey page on successful login
-                navigate_to("Survey")
-                st.stop() # Stop script to ensure navigation completes
-            else:
-                st.error("Invalid email or password.")
+            if submitted:
+                if not email or not password:
+                    st.error("Both email and password are required!")
+                elif check_login(email, password):
+                    st.session_state.user_email = email
+                    st.success("Welcome!")
+                    navigate_to("Survey")
+                else:
+                    st.error("Invalid email or password.")
 
-        # --- REFINED UI FOR FORGOT PASSWORD AND SIGN UP ---
-        # Provides a clear, standalone link for "Forgot Password".
+        ## FIX: Combined "Don't have an account?" and "Forgot Password?" into a single line.
         st.markdown("""
-            <div style="text-align: right; margin-top: 10px; font-size: 14px;">
-                <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold; text-decoration: none;">Forgot Password?</a>
+            <div class="bottom-links">
+                <span>Don’t have an account?</span>
+                <a href="?page=forgot" target="_self">Forgot Password?</a>
             </div>
         """, unsafe_allow_html=True)
         
-        # Provides a clear, separate option for user registration.
-        st.markdown("<div style='text-align: center; margin-top:25px; margin-bottom:10px; color: #555;'>Don't have an account?</div>", unsafe_allow_html=True)
+        # This button is now outside the form.
         if st.button("Click here to Sign Up"):
             navigate_to("User_Registration")
-            st.stop()
 
         st.markdown('</div>', unsafe_allow_html=True)
-
-# Example usage for standalone testing
-if __name__ == '__main__':
-    DatabaseConnection.initialize_pool() # Initialize the pool when the app starts
-    
-    def dummy_navigate_to(page_name):
-        st.success(f"Navigating to {page_name} (dummy)")
-        # In a real app, st.stop() would be called here after switching pages.
-
-    login(dummy_navigate_to)
