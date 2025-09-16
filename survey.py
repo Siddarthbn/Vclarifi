@@ -4,12 +4,13 @@ import mysql.connector
 from mysql.connector import Error
 import logging
 
-# Note: boto3, os, and json are NOT imported. Secret loading is handled by main.py.
+# Note: boto3, os, and json are NOT imported.
 
 # ---------- LOGGING AND CONSTANTS ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-BG_IMAGE_PATH = "images/background.jpg" # FIX: Defined at the top level
-LOGO_PATH = "images/vtara.png"       # FIX: Defined at the top level
+# FIX: Moved these constants to the top-level (global) scope
+BG_IMAGE_PATH = "images/background.jpg"
+LOGO_PATH = "images/vtara.png"
 
 # --- DATABASE UTILITIES (RECEIVE SECRETS) ---
 def get_db_connection(secrets):
@@ -69,7 +70,6 @@ def set_background(image_path):
             background-repeat: no-repeat;
             background-attachment: fixed;
         }}
-        /* FIX: Make the sidebar background transparent */
         [data-testid="stSidebar"] {{
             background-color: rgba(0,0,0,0);
         }}
