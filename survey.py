@@ -2,18 +2,14 @@ import streamlit as st
 import base64
 import mysql.connector
 from mysql.connector import Error
-from datetime import datetime, timedelta
-import pandas as pd
-import smtplib
-from email.mime.text import MIMEText
 import logging
 
 # Note: boto3, os, and json are NOT imported. Secret loading is handled by main.py.
 
 # ---------- LOGGING AND CONSTANTS ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-BG_IMAGE_PATH = "images/background.jpg"
-LOGO_PATH = "images/vtara.png"
+BG_IMAGE_PATH = "images/background.jpg" # FIX: Defined at the top level
+LOGO_PATH = "images/vtara.png"       # FIX: Defined at the top level
 
 # --- DATABASE UTILITIES (RECEIVE SECRETS) ---
 def get_db_connection(secrets):
@@ -31,27 +27,17 @@ def get_db_connection(secrets):
         logging.error(f"DB connection failed: {e}")
         return None
 
-def close_db_connection(conn, cursor=None):
-    if cursor:
-        try: cursor.close()
-        except Error: pass
-    if conn and conn.is_connected():
-        try: conn.close()
-        except Error: pass
-
 def create_required_tables(secrets):
-    """Checks for and creates necessary tables like Team_Overall_Averages."""
+    """Checks for and creates necessary tables."""
     conn = get_db_connection(secrets)
     if not conn: return
     try:
         with conn.cursor() as cursor:
-            # Add CREATE TABLE IF NOT EXISTS statements here for all required tables
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS Team_Overall_Averages (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    organisation_name VARCHAR(255) NOT NULL,
+                    organisation_name VARCHAR(255),
                     admin_email VARCHAR(255),
-                    -- Add other columns as needed
                     UNIQUE KEY unique_org_period (organisation_name, admin_email)
                 );
             """)
@@ -59,7 +45,7 @@ def create_required_tables(secrets):
     except Error as e:
         st.error(f"Error creating required tables: {e}")
     finally:
-        close_db_connection(conn)
+        if conn and conn.is_connected(): conn.close()
 
 # --- UI UTILITIES ---
 def encode_image_to_base64(path):
@@ -71,7 +57,7 @@ def encode_image_to_base64(path):
         return None
 
 def set_background(image_path):
-    """Sets a robust full-screen background image."""
+    """Sets a robust full-screen background and makes the sidebar transparent."""
     encoded_image = encode_image_to_base64(image_path)
     if encoded_image:
         st.markdown(f"""
@@ -83,6 +69,10 @@ def set_background(image_path):
             background-repeat: no-repeat;
             background-attachment: fixed;
         }}
+        /* FIX: Make the sidebar background transparent */
+        [data-testid="stSidebar"] {{
+            background-color: rgba(0,0,0,0);
+        }}
         [data-testid="stHeader"] {{
             background-color: rgba(0,0,0,0);
         }}
@@ -91,29 +81,21 @@ def set_background(image_path):
 
 # ---------- MAIN SURVEY FUNCTION ----------
 def survey(navigate_to, user_email, secrets):
-    """
-    Renders the survey page.
-    Args:
-        navigate_to (function): Callback to switch pages.
-        user_email (str): The email of the logged-in user.
-        secrets (dict): Dictionary of application secrets passed from main.py.
-    """
-    # --- UI RENDERING ---
+    """ Renders the survey page. """
     if 'page_config_set' not in st.session_state:
-        st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
+        st.set_page_config(layout="wide", initial_sidebar_state="auto")
         st.session_state.page_config_set = True
     
-    set_background(BG_IMAGE_PATH)
+    set_background(BG_IMAGE_PATH) # This will now work correctly
 
-    # --- INITIALIZATION ---
-    # This block now correctly calls the top-level helper functions
     if 'db_tables_checked' not in st.session_state:
         create_required_tables(secrets)
         st.session_state.db_tables_checked = True
 
     # --- SIDEBAR AND LOGOUT ---
     st.sidebar.title("VClarifi")
-    st.sidebar.write(f"Logged in as: **{user_email}**")
+    st.sidebar.write(f"Logged in as:")
+    st.sidebar.info(f"{user_email}")
     if st.sidebar.button("Logout"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         navigate_to('login')
@@ -121,7 +103,6 @@ def survey(navigate_to, user_email, secrets):
     
     st.title("Survey Questionnaire")
     
-    # --- SURVEY LOGIC AND DISPLAY ---
     # --- Database Interaction Functions ---
     def get_db_connection():
         """Establishes and returns a database connection using global config variables."""
@@ -661,7 +642,4 @@ def survey(navigate_to, user_email, secrets):
         else:
             st.caption("Please answer all questions in this category to save.")
 
-    # Example placeholder:
     st.write("Welcome to the survey!")
-    if st.button("Simulate saving progress"):
-        st.success("Progress saved (simulation).")
