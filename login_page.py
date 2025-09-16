@@ -103,9 +103,9 @@ def set_background(image_path):
             [data-testid="stAppViewContainer"] {{
                 background-image: url("data:image/jpg;base64,{encoded}");
                 background-size: cover;
-                background-position: center; /* Center the background image */
+                background-position: center;
                 background-repeat: no-repeat;
-                background-attachment: fixed; /* Keep background fixed during scroll */
+                background-attachment: fixed;
             }}
             [data-testid="stHeader"] {{
                 background: rgba(0, 0, 0, 0);
@@ -124,32 +124,27 @@ def apply_styles():
             margin-top: 20px;
             padding-left: 60px;
             line-height: 1.6;
-            /* FIX: Make elements below logo stack vertically */
             display: flex;
-            flex-direction: column; 
-            gap: 5px; /* Spacing between stacked elements */
+            flex-direction: column;
+            gap: 5px;
         }
         .login-container {
             background-color: rgba(255, 255, 255, 0.95);
             padding: 40px;
             border-radius: 20px;
             width: 400px;
-            margin-top: 80px;
+            margin-top: 150px; /* Adjusted margin to position login box lower */
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-            /* FIX: Remove the top white container by adjusting margin-top as needed */
-            /* margin-top: 80px; can be adjusted if needed for overall placement */
         }
-        /* Make buttons inside the login container full-width */
         .login-container .stButton > button {
             width: 100%;
-            height: 55px; /* Taller button */
+            height: 55px;
             font-size: 18px;
-            border-radius: 8px; /* Match container border-radius */
+            border-radius: 8px;
             background-color: #2c662d;
             color: white;
             border: none;
         }
-        /* Style for the bottom links container */
         .bottom-links {
             display: flex;
             justify-content: space-between;
@@ -163,11 +158,21 @@ def apply_styles():
             font-weight: bold;
             text-decoration: none;
         }
-        .stTextInput > div > div > input { /* Targets Streamlit text input fields */
-            height: 55px; /* Match button height */
+        .stTextInput > div > div > input {
+            height: 55px;
             font-size: 18px;
-            border-radius: 8px; /* Match container border-radius */
+            border-radius: 8px;
             padding: 10px 15px;
+        }
+        .top-right-brand {
+            position: fixed;
+            top: 40px;
+            right: 50px;
+            font-size: 28px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px #000000;
+            z-index: 1000;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -176,20 +181,19 @@ def apply_styles():
 def login(navigate_to, *args, **kwargs):
     st.set_page_config(layout="wide")
 
-    # Handle navigation from query parameters FIRST, before rendering anything
+    # Handle navigation from query parameters FIRST
     if "page" in st.query_params:
         page_value = st.query_params.get("page")
-        if page_value == "forgot":
-            del st.query_params["page"] # Clean up the URL
-            navigate_to("forgot")
-        elif page_value == "User_Registration":
+        if page_value in ["forgot", "User_Registration"]:
             del st.query_params["page"]
-            navigate_to("User_Registration")
-        st.stop() # Immediately stop and rerun to navigate
-
+            navigate_to(page_value)
+            st.stop() # Stop execution to complete navigation immediately
 
     set_background(bg_path)
     apply_styles()
+
+    # Add the VCLARIFI text to the top-right corner
+    st.markdown('<div class="top-right-brand">VCLARIFI</div>', unsafe_allow_html=True)
 
     col_left, col_right = st.columns([1.2, 1])
 
@@ -211,8 +215,6 @@ def login(navigate_to, *args, **kwargs):
     with col_right:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
         
-        # FIX: Added VCLARIFI text above the login title
-        st.markdown('<div style="font-size: 28px; font-weight: bold; color: white; text-align: center; margin-bottom: 10px; text-shadow: 1px 1px 2px #000;">VCLARIFI</div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 32px; font-weight: bold; color: navy; text-align: center; margin-bottom: 25px;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
 
         with st.form("login_form"):
@@ -230,53 +232,16 @@ def login(navigate_to, *args, **kwargs):
                 else:
                     st.error("Invalid email or password.")
 
-        # FIX: Corrected alignment for "Don't have an account?" and "Forgot Password?"
         st.markdown("""
-            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 15px;">
-                <span style="font-size: 14px; color: #555;">Don’t have an account?</span>
-                <a href="?page=forgot" target="_self" style="color: #007BFF; font-weight: bold; text-decoration: none;">Forgot Password?</a>
+            <div class="bottom-links">
+                <span>Don’t have an account?</span>
+                <a href="?page=forgot" target="_self">Forgot Password?</a>
             </div>
         """, unsafe_allow_html=True)
         
-        # This button is now outside the form, aligned correctly.
-        st.markdown("<div style='margin-top:15px;'>", unsafe_allow_html=True) # Add some top margin
+        st.markdown("<div style='margin-top:15px;'>", unsafe_allow_html=True)
         if st.button("Click here to Sign Up"):
             navigate_to("User_Registration")
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
-
-# Example usage for standalone testing
-if __name__ == '__main__':
-    DatabaseConnection.initialize_pool()
-    
-    def dummy_navigate_to(page_name):
-        st.success(f"Navigating to {page_name} (dummy)")
-        if page_name == "Survey":
-            st.session_state.current_page_mock = "survey_mock_display"
-        elif page_name == "forgot":
-            st.session_state.current_page_mock = "forgot_mock_display"
-        elif page_name == "User_Registration":
-            st.session_state.current_page_mock = "registration_mock_display"
-        st.rerun()
-
-    if st.session_state.get("current_page_mock") == "survey_mock_display":
-        st.title("Mock Survey Page")
-        st.write("You are on the survey page.")
-        if st.button("Back to Login (Mock)"):
-            del st.session_state["current_page_mock"]
-            st.rerun()
-    elif st.session_state.get("current_page_mock") == "forgot_mock_display":
-        st.title("Mock Forgot Password Page")
-        st.write("You are on the forgot password page.")
-        if st.button("Back to Login (Mock)"):
-            del st.session_state["current_page_mock"]
-            st.rerun()
-    elif st.session_state.get("current_page_mock") == "registration_mock_display":
-        st.title("Mock User Registration Page")
-        st.write("You are on the registration page.")
-        if st.button("Back to Login (Mock)"):
-            del st.session_state["current_page_mock"]
-            st.rerun()
-    else:
-        login(dummy_navigate_to)
