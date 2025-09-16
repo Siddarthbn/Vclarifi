@@ -67,7 +67,7 @@ def handle_email_stage(navigate_to, secrets):
                     st.success(f"A code has been sent to {email}.")
                     st.rerun()
                 else:
-                    st.error("Could not send verification email.")
+                    st.error("Could not send verification email. Please check your App Password and try again.")
             elif not db_error:
                 st.error("This email is not registered.")
 
@@ -119,7 +119,6 @@ def handle_reset_stage(navigate_to, secrets):
 def handle_success_stage(navigate_to):
     st.success("Your password has been successfully reset!")
     if st.button("Proceed to Login"):
-        # Clean up session state
         for key in ['forgot_password_stage', 'reset_email', 'verified_reset_code']:
             if key in st.session_state:
                 del st.session_state[key]
@@ -135,13 +134,20 @@ def encode_image_to_base64(path):
         return None
 
 def set_background(path):
+    """Sets a robust full-screen background image."""
     encoded_image = encode_image_to_base64(path)
     if encoded_image:
         st.markdown(f"""
         <style>
-        .stApp {{
+        [data-testid="stAppViewContainer"] {{
             background-image: url("data:image/jpeg;base64,{encoded_image}");
             background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }}
+        [data-testid="stHeader"] {{
+            background-color: rgba(0,0,0,0);
         }}
         </style>
         """, unsafe_allow_html=True)
@@ -257,7 +263,9 @@ def update_password_in_db(email, new_password, secrets):
 def send_verification_code_email(to_email, code, secrets):
     SENDER_EMAIL = secrets.get("SENDER_EMAIL")
     SENDER_APP_PASSWORD = secrets.get("SENDER_APP_PASSWORD")
-    if not SENDER_EMAIL or not SENDER_APP_PASSWORD: return False
+    if not SENDER_EMAIL or not SENDER_APP_PASSWORD:
+        logging.error("Email credentials not found in secrets.")
+        return False
     
     msg = MIMEText(f"Your VClarifi password reset code is: {code}")
     msg['Subject'] = "VClarifi Password Reset Code"
@@ -267,9 +275,10 @@ def send_verification_code_email(to_email, code, secrets):
         with smtplib.SMTP_SSL(secrets.get("SMTP_SERVER"), int(secrets.get("SMTP_PORT"))) as server:
             server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
             server.sendmail(SENDER_EMAIL, to_email, msg.as_string())
+        logging.info(f"Verification email sent to {to_email}")
         return True
     except Exception as e:
-        logging.exception(f"Email error: {e}")
+        logging.exception(f"Email could not be sent to {to_email}. Error: {e}")
         return False
 
 def send_password_change_email(to_email, secrets):
