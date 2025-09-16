@@ -184,8 +184,8 @@ def login(navigate_to, secrets):
     with col_right:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
         
-        # Title color changed from 'navy' to 'white' for better visibility
-        st.markdown('<div style="font-size: 32px; font-weight: bold; color: white; text-align: center; margin-bottom: 25px;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
+        # Title color changed back to 'navy' as requested
+        st.markdown('<div style="font-size: 32px; font-weight: bold; color: navy; text-align: center; margin-bottom: 25px;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
 
         with st.form("login_form"):
             email = st.text_input("Email Address", key="email_input")
@@ -205,16 +205,19 @@ def login(navigate_to, secrets):
                         st.error("Invalid email or password.")
 
         # --- REFINED BOTTOM LINKS ---
-        
-        # "Forgot Password?" button that navigates correctly
-        st.markdown('<div class="link-button" style="text-align: right; margin-top: 20px;">', unsafe_allow_html=True)
-        if st.button("Forgot Password?"):
-            navigate_to("forgot") # Navigates to forgot.py (or the page named "forgot")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # "Sign Up" button with prompt
-        st.markdown("<div style='margin-top:15px; color: white;'>Don't have an account?</div>", unsafe_allow_html=True)
-        if st.button("Click here to Sign Up"):
-            navigate_to("User_Registration")
+        # Using columns to place Sign Up and Forgot Password on the same line
+        st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+        col_signup, col_forgot = st.columns([2, 1])
+
+        with col_signup:
+            st.markdown("<div style='color: white;'>Don't have an account?</div>", unsafe_allow_html=True)
+            if st.button("Click here to Sign Up"):
+                navigate_to("User_Registration")
+
+        with col_forgot:
+            st.markdown('<div class="link-button" style="text-align: right;">', unsafe_allow_html=True)
+            if st.button("Forgot Password?"):
+                navigate_to("forgot")
+            st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
