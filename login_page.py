@@ -165,7 +165,8 @@ def apply_styles():
     """, unsafe_allow_html=True)
 
 # ---------- REFINED LOGIN FUNCTION ----------
-def login(navigate_to):
+# CORRECTED: Added *args and **kwargs to handle unexpected arguments gracefully.
+def login(navigate_to, *args, **kwargs):
     # Note: st.set_page_config() should ideally be called only once at the start of your main app script.
     st.set_page_config(layout="wide")
 
