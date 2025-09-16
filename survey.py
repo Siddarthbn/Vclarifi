@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- File Paths ---
 # These are now relative to the script's location
 BG_PATH = os.path.join("images", "background.jpg")
-LOGO_PATH = os.path.join("images", "vtara.png")
+LOGO_PATH = os.path.join("images", "VTARA.png")
 
 # --- Survey Settings ---
 MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
