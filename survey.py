@@ -104,7 +104,7 @@ def survey(navigate_to, user_email, secrets):
     st.title("Survey Questionnaire")
     
     # ---------- MAIN SURVEY FUNCTION ----------
-def survey(navigate_to, user_email):
+def survey(navigate_to, user_email, secrets):
     """
     Streamlit function to administer a multi-category survey, save responses,
     track progress, and manage admin features.
