@@ -89,7 +89,7 @@ def set_background(image_path):
                 background-size: cover;
                 background-position: center;
                 background-repeat: no-repeat;
-                background-attachment: fixed; /* Ensures background doesn't scroll */
+                background-attachment: fixed;
             }}
             [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
             </style>
@@ -98,31 +98,43 @@ def set_background(image_path):
 def apply_styles():
     st.markdown("""
         <style>
+        /* Vertically center content in the right column to prevent scrolling */
+        div[data-testid="stHorizontalBlock"] > div:nth-of-type(2) {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
         .left-info {
             color: white; font-size: 16px; margin-top: 30px; padding-left: 60px;
             line-height: 2; display: flex; flex-direction: column; gap: 10px;
         }
-        /* Make the container invisible */
         .login-container {
             background-color: transparent;
             width: 420px;
-            margin-top: 150px;
             box-shadow: none;
-            padding: 0; /* Remove padding if container is invisible */
+            padding: 0;
         }
         .login-container .stButton > button {
             width: 100%; height: 55px; font-size: 18px; font-weight: bold; border-radius: 10px;
             background-image: linear-gradient(to right, #2c662d, #3a803d);
             color: white; border: none;
         }
-        .bottom-links {
-            display: flex; justify-content: space-between; align-items: center;
-            font-size: 14px; color: white; /* Make text white */
-            margin-top: 20px;
+        /* Style the "Forgot Password?" button to look like a link */
+        .link-button .stButton > button {
+            background: none !important;
+            border: none !important;
+            padding: 0 !important;
+            color: #87CEEB !important; /* Light blue */
+            text-decoration: none !important;
+            font-size: 14px;
+            font-weight: bold;
+            width: auto !important;
+            height: auto !important;
         }
-        .bottom-links a { color: #87CEEB; font-weight: bold; text-decoration: none; } /* Light blue for links */
-        
-        /* Style the input fields and their labels */
+        .link-button .stButton > button:hover {
+            text-decoration: underline !important;
+            color: white !important;
+        }
         .stTextInput input {
             height: 55px; font-size: 16px; border-radius: 10px;
             background-color: rgba(255, 255, 255, 0.9);
@@ -132,7 +144,6 @@ def apply_styles():
             color: white !important;
             font-weight: bold !important;
         }
-        
         .top-right-brand {
             position: fixed; top: 40px; right: 50px; font-size: 32px;
             font-weight: bold; color: white; text-shadow: 2px 2px 5px #000;
@@ -172,7 +183,9 @@ def login(navigate_to, secrets):
 
     with col_right:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        st.markdown('<div style="font-size: 32px; font-weight: bold; color: navy; text-align: center; margin-bottom: 25px;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
+        
+        # Title color changed from 'navy' to 'white' for better visibility
+        st.markdown('<div style="font-size: 32px; font-weight: bold; color: white; text-align: center; margin-bottom: 25px;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
 
         with st.form("login_form"):
             email = st.text_input("Email Address", key="email_input")
@@ -191,16 +204,17 @@ def login(navigate_to, secrets):
                     else:
                         st.error("Invalid email or password.")
 
-        st.markdown("""
-            <div class="bottom-links">
-                <span>Don’t have an account?</span>
-                <a href="?page=forgot" target="_self">Forgot Password?</a>
-            </div>
-        """, unsafe_allow_html=True)
+        # --- REFINED BOTTOM LINKS ---
         
-        st.markdown("<div style='margin-top:15px;'>", unsafe_allow_html=True)
+        # "Forgot Password?" button that navigates correctly
+        st.markdown('<div class="link-button" style="text-align: right; margin-top: 20px;">', unsafe_allow_html=True)
+        if st.button("Forgot Password?"):
+            navigate_to("forgot") # Navigates to forgot.py (or the page named "forgot")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # "Sign Up" button with prompt
+        st.markdown("<div style='margin-top:15px; color: white;'>Don't have an account?</div>", unsafe_allow_html=True)
         if st.button("Click here to Sign Up"):
             navigate_to("User_Registration")
-        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
