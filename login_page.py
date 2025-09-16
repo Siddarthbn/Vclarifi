@@ -101,19 +101,14 @@ def apply_styles():
         }
         .login-container {
             background-color: rgba(255, 255, 255, 0.98); padding: 40px; border-radius: 20px;
-            width: 420px; margin-top: 100px; /* Adjusted margin to remove space */
+            width: 420px;
+            margin-top: 100px; /* Adjusted margin to remove the extra space */
             box-shadow: 0 15px 30px rgba(0,0,0,0.25);
         }
-        /* Make all buttons inside the container wide */
         .login-container .stButton > button {
-            width: 100%;
-            height: 55px;
-            font-size: 18px;
-            font-weight: bold;
-            border-radius: 10px;
+            width: 100%; height: 55px; font-size: 18px; font-weight: bold; border-radius: 10px;
             background-image: linear-gradient(to right, #2c662d, #3a803d);
-            color: white;
-            border: none;
+            color: white; border: none;
         }
         .bottom-links {
             display: flex; justify-content: space-between; align-items: center;
@@ -187,7 +182,6 @@ def login(navigate_to, secrets):
         """, unsafe_allow_html=True)
         
         st.markdown("<div style='margin-top:15px;'>", unsafe_allow_html=True)
-        # This button will now be wide due to the CSS targeting its container
         if st.button("Click here to Sign Up"):
             navigate_to("User_Registration")
         st.markdown("</div>", unsafe_allow_html=True)
