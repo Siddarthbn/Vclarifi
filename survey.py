@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import pandas as pd
 import smtplib
 from email.mime.text import MIMEText
-import numpy as np
 import logging
 
 # Note: boto3, os, and json are NOT imported. Secret loading is handled by main.py.
@@ -15,8 +14,6 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_PATH = "images/vtara.png"
-MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
-TEAM_AVERAGE_DATA_WINDOW_DAYS = 90
 
 # --- DATABASE UTILITIES (RECEIVE SECRETS) ---
 def get_db_connection(secrets):
@@ -42,6 +39,56 @@ def close_db_connection(conn, cursor=None):
         try: conn.close()
         except Error: pass
 
+def create_required_tables(secrets):
+    """Checks for and creates necessary tables like Team_Overall_Averages."""
+    conn = get_db_connection(secrets)
+    if not conn: return
+    try:
+        with conn.cursor() as cursor:
+            # Add CREATE TABLE IF NOT EXISTS statements here for all required tables
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS Team_Overall_Averages (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    organisation_name VARCHAR(255) NOT NULL,
+                    admin_email VARCHAR(255),
+                    -- Add other columns as needed
+                    UNIQUE KEY unique_org_period (organisation_name, admin_email)
+                );
+            """)
+        conn.commit()
+    except Error as e:
+        st.error(f"Error creating required tables: {e}")
+    finally:
+        close_db_connection(conn)
+
+# --- UI UTILITIES ---
+def encode_image_to_base64(path):
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except FileNotFoundError:
+        logging.warning(f"Image not found: {path}")
+        return None
+
+def set_background(image_path):
+    """Sets a robust full-screen background image."""
+    encoded_image = encode_image_to_base64(image_path)
+    if encoded_image:
+        st.markdown(f"""
+        <style>
+        [data-testid="stAppViewContainer"] {{
+            background-image: url("data:image/jpeg;base64,{encoded_image}");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }}
+        [data-testid="stHeader"] {{
+            background-color: rgba(0,0,0,0);
+        }}
+        </style>
+        """, unsafe_allow_html=True)
+
 # ---------- MAIN SURVEY FUNCTION ----------
 def survey(navigate_to, user_email, secrets):
     """
@@ -51,75 +98,30 @@ def survey(navigate_to, user_email, secrets):
         user_email (str): The email of the logged-in user.
         secrets (dict): Dictionary of application secrets passed from main.py.
     """
-    # --- NESTED HELPER FUNCTIONS (TO EASILY ACCESS SECRETS) ---
-
-    def set_background(image_path):
-        try:
-            with open(image_path, "rb") as img_file:
-                encoded = base64.b64encode(img_file.read()).decode()
-            st.markdown(f"""
-            <style>
-            .stApp {{
-                background-image: url("data:image/jpeg;base64,{encoded}");
-                background-size: cover; background-repeat: no-repeat; background-attachment: fixed;
-            }}
-            /* (Your other CSS rules here...) */
-            </style>""", unsafe_allow_html=True)
-        except FileNotFoundError: st.warning(f"Background image not found: {image_path}")
-    
-    # --- All your other original helper functions (database, email, etc.) would be defined here.
-    # --- Make sure each one that needs credentials calls get_db_connection(secrets).
-    
-    # Example DB call within a nested function:
-    def get_user_details(email):
-        conn = get_db_connection(secrets) # Correctly pass secrets
-        if not conn: return None
-        try:
-            with conn.cursor(dictionary=True) as cursor:
-                cursor.execute("SELECT first_name, last_name FROM user_registration WHERE Email_ID = %s", (email,))
-                return cursor.fetchone()
-        finally:
-            close_db_connection(conn)
-
-    # --- SURVEY DEFINITION ---
-    likert_options = ["Select", "1: Not at all", "2: To a very little extent", "3: To a little extent", "4. To a moderate extent", "5. To a fairly large extent", "6. To a great extent", "7. To a very great extent"]
-    survey_questions = {
-        "Leadership": {
-            "Strategic Planning": "Question text...",
-            # ... other questions
-        },
-        # ... other categories
-    }
-    all_category_keys = list(survey_questions.keys())
-
-    # --- STREAMLIT APP UI AND LOGIC EXECUTION ---
+    # --- UI RENDERING ---
     if 'page_config_set' not in st.session_state:
         st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
         st.session_state.page_config_set = True
     
     set_background(BG_IMAGE_PATH)
 
+    # --- INITIALIZATION ---
+    # This block now correctly calls the top-level helper functions
+    if 'db_tables_checked' not in st.session_state:
+        create_required_tables(secrets)
+        st.session_state.db_tables_checked = True
+
+    # --- SIDEBAR AND LOGOUT ---
     st.sidebar.title("VClarifi")
     st.sidebar.write(f"Logged in as: **{user_email}**")
     if st.sidebar.button("Logout"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         navigate_to('login')
         st.rerun()
-
-    # --- Your original, detailed survey logic continues here ---
-    # The error was in this initialization block. The call is now corrected.
-    if 'db_tables_checked' not in st.session_state:
-        conn_init = get_db_connection(secrets) # FIX: Pass the secrets dictionary
-        if conn_init:
-            # create_team_overall_averages_table(conn_init) # This function also needs secrets if not nested
-            close_db_connection(conn_init)
-            st.session_state.db_tables_checked = True
-
-    # The rest of your UI logic will now work correctly.
-    st.title("Survey Questionnaire")
-    user_details = get_user_details(user_email)
-    st.write(f"Welcome, {user_details.get('first_name', '')}!")
     
+    st.title("Survey Questionnaire")
+    
+    # --- SURVEY LOGIC AND DISPLAY ---
     # --- Database Interaction Functions ---
     def get_db_connection():
         """Establishes and returns a database connection using global config variables."""
@@ -658,3 +660,8 @@ def survey(navigate_to, user_email, secrets):
                 else: st.error(f"Failed to save progress for '{current_sel_cat_form}'. Please try again.")
         else:
             st.caption("Please answer all questions in this category to save.")
+
+    # Example placeholder:
+    st.write("Welcome to the survey!")
+    if st.button("Simulate saving progress"):
+        st.success("Progress saved (simulation).")
