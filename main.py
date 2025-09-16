@@ -3,6 +3,7 @@ import importlib
 import boto3
 import json
 import traceback
+import logging
 
 # ==============================================================================
 # --- AWS SECRETS MANAGER HELPER ---
@@ -25,7 +26,7 @@ def get_aws_secrets():
     try:
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
         secret_string = get_secret_value_response['SecretString']
-        print("Secrets Loaded Successfully from AWS.")
+        logging.info("Secrets Loaded Successfully from AWS.")
         return json.loads(secret_string)
     except Exception as e:
         # Log the full error for debugging but show a user-friendly message
@@ -113,15 +114,17 @@ def load_page():
         module = importlib.import_module(page_info['module_name'])
         page_function = getattr(module, page_info['function_name'])
 
-        # Prepare arguments to pass to the page function for flexibility.
-        # This allows page functions to have different signatures.
+        # Prepare a base set of arguments for all page functions.
         args_to_pass = {
             "navigate_to": navigate_to,
-            "user_email": user_email,
             "secrets": secrets
         }
-        
-        # Call the target function with the prepared arguments.
+
+        # Only add user_email to the arguments if the page requires a login.
+        if page_info['requires_login']:
+            args_to_pass['user_email'] = user_email
+
+        # Call the target function with the correct set of arguments.
         page_function(**args_to_pass)
 
     except Exception as e:
