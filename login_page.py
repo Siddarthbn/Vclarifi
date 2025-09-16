@@ -15,7 +15,7 @@ logo_path = "images/VTARA.png"     # Ensure this path is correct
 @st.cache_data(ttl=600)
 def get_aws_secrets():
     """Fetches application secrets from AWS Secrets Manager and caches them."""
-    secret_name = "production/vclarifi/app_secrets"
+    secret_name = "production/vclarifi/secrets"
     region_name = "us-east-1"  # Change to your AWS region if different
 
     session = boto3.session.Session()
