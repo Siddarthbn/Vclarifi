@@ -88,12 +88,7 @@ def set_background(image_path):
                 background-image: url("data:image/jpeg;base64,{encoded}");
                 background-size: cover;
                 background-position: center;
-                background-repeat: no-repeat;
-                background-attachment: fixed;
             }}
-            /* Ensure header and sidebar don't obscure background */
-            [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
-            [data-testid="stSidebar"] {{ background: rgba(0,0,0,0); }}
             </style>
         """, unsafe_allow_html=True)
 
@@ -105,12 +100,9 @@ def apply_styles():
             line-height: 2; display: flex; flex-direction: column; gap: 10px;
         }
         .login-container {
-            background-color: transparent; /* Changed to transparent */
-            padding: 40px;
-            border-radius: 20px;
-            width: 420px;
-            margin-top: 100px;
-            box-shadow: none; /* Removed box shadow for the main container */
+            background-color: rgba(255, 255, 255, 0.98); padding: 40px; border-radius: 20px;
+            width: 420px; margin-top: 100px;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.25);
         }
         .login-container .stButton > button {
             width: 100%; height: 55px; font-size: 18px; font-weight: bold; border-radius: 10px;
@@ -122,48 +114,10 @@ def apply_styles():
             font-size: 14px; color: #333; margin-top: 20px;
         }
         .bottom-links a { color: #007BFF; font-weight: bold; text-decoration: none; }
-        
-        /* Specific styles to remove containers around text inputs */
-        .stTextInput > div > div > input {
-            height: 55px;
-            font-size: 16px;
-            border-radius: 10px;
-            background-color: rgba(255, 255, 255, 0.9); /* Subtle background for input text */
-            border: 1px solid #ddd; /* Light border for definition */
-            padding: 10px 15px; /* Add some padding */
-            color: #333; /* Darker text for readability */
-        }
-        .stTextInput > label {
-            color: white; /* Make label visible against background */
-            font-weight: bold;
-            margin-bottom: 5px; /* Space between label and input */
-            display: block; /* Ensure label takes its own line */
-        }
-        
-        /* Adjusting for the 'Password' eye icon container if needed */
-        .stTextInput > div > div[data-testid="stInputContainer"] {
-            background-color: transparent;
-            border: none;
-            box-shadow: none;
-            padding: 0;
-        }
-        .stTextInput > div > div > div[data-testid="stWidgetLabel"] {
-            color: white; /* Ensure password label is white */
-        }
-
+        .stTextInput input { height: 55px; font-size: 16px; border-radius: 10px; }
         .top-right-brand {
             position: fixed; top: 40px; right: 50px; font-size: 32px;
             font-weight: bold; color: white; text-shadow: 2px 2px 5px #000;
-        }
-        /* Style for the "LOGIN TO YOUR ACCOUNT" title */
-        .login-title {
-            font-size: 32px;
-            font-weight: bold;
-            color: navy; /* Retain color from your image */
-            text-align: center;
-            margin-bottom: 25px;
-            background-color: transparent; /* Ensure no white background here */
-            padding: 0;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -175,6 +129,17 @@ def login(navigate_to, secrets):
         st.set_page_config(layout="wide")
     except st.errors.StreamlitAPIException:
         pass # Already set
+
+    # FIX: Handle navigation from links that use query parameters FIRST
+    if "page" in st.query_params:
+        page_value = st.query_params.get("page")
+        if page_value == "forgot":
+            # Clean up the URL to prevent re-triggering on the next interaction
+            del st.query_params["page"]
+            # Call the navigation function from main.py
+            navigate_to("forgot")
+            # Stop the script to ensure the navigation completes immediately
+            st.stop()
 
     set_background(BG_IMAGE_PATH)
     apply_styles()
@@ -199,10 +164,8 @@ def login(navigate_to, secrets):
             st.error(f"Logo image not found at {LOGO_IMAGE_PATH}")
 
     with col_right:
-        # The login-container itself is now transparent and has no shadow
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        # Use the specific title class for "LOGIN TO YOUR ACCOUNT"
-        st.markdown('<div class="login-title">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size: 32px; font-weight: bold; color: navy; text-align: center; margin-bottom: 25px;">LOGIN TO YOUR ACCOUNT</div>', unsafe_allow_html=True)
 
         with st.form("login_form"):
             email = st.text_input("Email Address", key="email_input")
@@ -211,7 +174,6 @@ def login(navigate_to, secrets):
 
             if submitted:
                 with st.spinner("Authenticating..."):
-                    time.sleep(0.5) # Simulate network latency
                     if not email or not password:
                         st.error("Both email and password are required!")
                     elif check_login(email, password, secrets):
