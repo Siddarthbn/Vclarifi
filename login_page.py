@@ -88,7 +88,10 @@ def set_background(image_path):
                 background-image: url("data:image/jpeg;base64,{encoded}");
                 background-size: cover;
                 background-position: center;
+                background-repeat: no-repeat;
+                background-attachment: fixed; /* Ensures background doesn't scroll */
             }}
+            [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
             </style>
         """, unsafe_allow_html=True)
 
@@ -99,13 +102,13 @@ def apply_styles():
             color: white; font-size: 16px; margin-top: 30px; padding-left: 60px;
             line-height: 2; display: flex; flex-direction: column; gap: 10px;
         }
-        /* Make the main container transparent and remove its shadow */
+        /* Make the container invisible */
         .login-container {
             background-color: transparent;
-            padding: 40px;
             width: 420px;
-            margin-top: 100px;
+            margin-top: 150px;
             box-shadow: none;
+            padding: 0; /* Remove padding if container is invisible */
         }
         .login-container .stButton > button {
             width: 100%; height: 55px; font-size: 18px; font-weight: bold; border-radius: 10px;
@@ -114,20 +117,17 @@ def apply_styles():
         }
         .bottom-links {
             display: flex; justify-content: space-between; align-items: center;
-            font-size: 14px; color: #eee; /* Lightened color for better visibility */
+            font-size: 14px; color: white; /* Make text white */
             margin-top: 20px;
         }
-        .bottom-links a { color: #87CEEB; font-weight: bold; text-decoration: none; } /* Sky blue for link */
+        .bottom-links a { color: #87CEEB; font-weight: bold; text-decoration: none; } /* Light blue for links */
         
-        /* Style the text input fields */
+        /* Style the input fields and their labels */
         .stTextInput input {
-            background-color: rgba(255, 255, 255, 0.9); /* Subtle background */
-            color: #333; /* Dark text for readability */
-            height: 55px;
-            font-size: 16px;
-            border-radius: 10px;
+            height: 55px; font-size: 16px; border-radius: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #333;
         }
-        /* Make the labels (Email Address, Password) white */
         .stTextInput label {
             color: white !important;
             font-weight: bold !important;
