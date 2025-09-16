@@ -10,6 +10,8 @@ import bcrypt
 import mysql.connector
 from mysql.connector import Error
 import streamlit as st
+import boto3  # Added for AWS
+import json   # Added for parsing AWS secret
 
 # ---------- LOGGING CONFIGURATION ----------
 logging.basicConfig(
@@ -19,36 +21,63 @@ logging.basicConfig(
 
 # ---------- CONSTANTS AND STATIC CONFIGURATION ----------
 RESET_CODE_EXPIRY_MINUTES = 15
-# TODO: Update with the correct absolute or relative paths for your project.
-BG_IMAGE_PATH = "C:/Users/DELL/Desktop/background.jpg"
-LOGO_IMAGE_PATH = "C:/Users/DELL/Desktop/VTARA.png"
+BG_IMAGE_PATH = "images/background.jpg"
+LOGO_IMAGE_PATH = "images/VTARA.png"
 
-# ---------- GLOBAL CONFIGURATION (USER-SPECIFIED METHOD) ----------
-# This block attempts to load all secrets into global variables. If it fails,
-# it sets them to None and logs a critical error, preventing the app from crashing.
-try:
-    DB_HOST = st.secrets.database.DB_HOST
-    DB_DATABASE = st.secrets.database.DB_DATABASE
-    DB_USER = st.secrets.database.DB_USER
-    DB_PASSWORD = st.secrets.database.DB_PASSWORD
+# ---------- AWS SECRETS MANAGER HELPER FUNCTION ----------
+@st.cache_data(ttl=600)  # Cache the secrets for 10 minutes
+def get_aws_secrets():
+    """
+    Fetches the application secrets from AWS Secrets Manager.
+    
+    NOTE: AWS Secrets Manager stores the set of key-value pairs as a single JSON string.
+    This function retrieves that string and parses it into a Python dictionary.
+    """
+    secret_name = "production/vclarifi/app_secrets"  # Replace if your secret name is different
+    region_name = "us-east-1"                        # Replace with your AWS region
 
-    SENDER_EMAIL = st.secrets.email.SENDER_EMAIL
-    SENDER_APP_PASSWORD = st.secrets.email.SENDER_APP_PASSWORD
-    SMTP_SERVER = st.secrets.email.SMTP_SERVER
-    SMTP_PORT = st.secrets.email.SMTP_PORT
+    session = boto3.session.Session()
+    client = session.client(service_name='secretsmanager', region_name=region_name)
 
-    CONFIG_LOADED_SUCCESSFULLY = True
-    logging.info("Configuration secrets loaded successfully.")
+    try:
+        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+        secret_string = get_secret_value_response['SecretString']
+        return json.loads(secret_string)
+    except Exception as e:
+        logging.critical(f"FATAL: Could not retrieve secrets from AWS Secrets Manager. Error: {e}")
+        st.error("Application is critically misconfigured. Please contact an administrator.")
+        return None
 
-except (AttributeError, KeyError) as e:
-    logging.critical(f"FATAL: Could not read secrets from secrets.toml. Check file location and keys. Error: {e}")
-    # Display the error on the page if Streamlit has started enough to do so.
-    st.error("Application is critically misconfigured. Please contact an administrator.")
-    # Set all config variables to None so the app can still load without crashing.
+# ---------- GLOBAL CONFIGURATION (from AWS Secrets Manager) ----------
+# This block now calls the AWS helper function to load secrets.
+secrets = get_aws_secrets()
+
+if secrets:
+    DB_HOST = secrets.get("DB_HOST")
+    DB_DATABASE = secrets.get("DB_DATABASE")
+    DB_USER = secrets.get("DB_USER")
+    DB_PASSWORD = secrets.get("DB_PASSWORD")
+
+    SENDER_EMAIL = secrets.get("SENDER_EMAIL")
+    SENDER_APP_PASSWORD = secrets.get("SENDER_APP_PASSWORD")
+    SMTP_SERVER = secrets.get("SMTP_SERVER")
+    SMTP_PORT = secrets.get("SMTP_PORT")
+
+    # Verify that essential secrets were loaded
+    essential_vars = [DB_HOST, DB_DATABASE, DB_USER, DB_PASSWORD, SENDER_EMAIL, SENDER_APP_PASSWORD]
+    if all(essential_vars):
+        CONFIG_LOADED_SUCCESSFULLY = True
+        logging.info("Configuration secrets loaded successfully from AWS Secrets Manager.")
+    else:
+        CONFIG_LOADED_SUCCESSFULLY = False
+        logging.critical("One or more essential keys were missing from the fetched AWS secret.")
+        st.error("Application configuration is incomplete. Please contact an administrator.")
+else:
+    # Set all config variables to None if fetching failed
     DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
     SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
     CONFIG_LOADED_SUCCESSFULLY = False
-
+    # The get_aws_secrets function already logs the critical error and shows it on screen.
 
 # ---------- STREAMLIT PAGE CONFIGURATION ----------
 try:
@@ -225,9 +254,6 @@ def set_background(path):
     """
     encoded_image = encode_image_to_base64(path)
     if encoded_image:
-        # This CSS targets the main Streamlit app container.
-        # `background-size: cover` ensures the image fills the screen.
-        # `background-attachment: fixed` prevents the background from scrolling.
         st.markdown(f"""
         <style>
         .stApp {{
@@ -394,7 +420,7 @@ def send_verification_code_email(to_email, code):
     msg['From'] = SENDER_EMAIL
     msg['To'] = to_email
     try:
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+        with smtplib.SMTP_SSL(SMTP_SERVER, int(SMTP_PORT), timeout=10) as server:
             server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
             server.sendmail(SENDER_EMAIL, to_email, msg.as_string())
         logging.info(f"Verification code successfully sent to {to_email}.")
@@ -415,7 +441,7 @@ def send_password_change_email(to_email):
     msg['From'] = SENDER_EMAIL
     msg['To'] = to_email
     try:
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+        with smtplib.SMTP_SSL(SMTP_SERVER, int(SMTP_PORT), timeout=10) as server:
             server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
             server.sendmail(SENDER_EMAIL, to_email, msg.as_string())
         logging.info(f"Password change notification sent to {to_email}.")
