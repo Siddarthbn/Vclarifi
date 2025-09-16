@@ -243,7 +243,7 @@ def survey(navigate_to, user_email, secrets):
 
 
     # --- Database Interaction Functions ---
-    def get_db_connection():
+    def get_db_connection(secrets):
         """Establishes and returns a database connection using global config variables."""
         if not DB_HOST:
             logging.error("DB connection attempt failed because secrets were not loaded.")
@@ -613,7 +613,7 @@ def survey(navigate_to, user_email, secrets):
         st.session_state.page_config_set = True
 
     if 'db_tables_checked' not in st.session_state:
-        conn_init = get_db_connection()
+        conn_init = get_db_connection(secrets)
         if conn_init:
             create_team_overall_averages_table(conn_init)
             close_db_connection(conn_init)
