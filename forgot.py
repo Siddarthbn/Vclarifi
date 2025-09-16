@@ -1,4 +1,4 @@
-import base64
+=import base64
 import logging
 import random
 import re
@@ -119,6 +119,7 @@ def handle_reset_stage(navigate_to, secrets):
 def handle_success_stage(navigate_to):
     st.success("Your password has been successfully reset!")
     if st.button("Proceed to Login"):
+        # Clean up session state
         for key in ['forgot_password_stage', 'reset_email', 'verified_reset_code']:
             if key in st.session_state:
                 del st.session_state[key]
