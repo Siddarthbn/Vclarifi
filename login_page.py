@@ -9,7 +9,7 @@ import json
 
 # ---------- FILE PATHS ----------
 bg_path = "images/background.jpg"  # Ensure this path is correct
-logo_path = "images/vtara.png"     # Ensure this path is correct
+logo_path = "images/VTARA.png"     # Ensure this path is correct
 
 # --- AWS SECRETS MANAGER HELPER FUNCTION ---
 @st.cache_data(ttl=600)
