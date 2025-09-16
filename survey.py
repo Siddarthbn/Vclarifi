@@ -8,7 +8,7 @@ import logging
 
 # ---------- LOGGING AND CONSTANTS ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# FIX: Moved these constants to the top-level (global) scope
+# FIX: Renamed variables as requested
 bg_path = "images/background.jpg"
 logo_path = "images/vtara.png"
 
@@ -86,7 +86,7 @@ def survey(navigate_to, user_email, secrets):
         st.set_page_config(layout="wide", initial_sidebar_state="auto")
         st.session_state.page_config_set = True
     
-    set_background(BG_IMAGE_PATH) # This will now work correctly
+    set_background(bg_path) # Uses the renamed variable
 
     if 'db_tables_checked' not in st.session_state:
         create_required_tables(secrets)
