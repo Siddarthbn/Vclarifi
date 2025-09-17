@@ -100,7 +100,7 @@ def survey(navigate_to, user_email, **kwargs):
     # --- Paths ---
     # TODO: Update these paths to be correct for your environment
     bg_path = "images/background.jpg"
-    logo_path = "images/vtara.png"
+    logo_path = "images/VTARA.png"
 
     # --- Constants ---
     MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
