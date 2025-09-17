@@ -89,7 +89,7 @@ except Exception as e:
 
 
 # ---------- MAIN SURVEY FUNCTION ----------
-def survey(navigate_to, user_email):
+def survey(navigate_to, user_email,**kwargs):
     """
     Streamlit function to administer a multi-category survey, save responses,
     track progress, and manage admin features.
