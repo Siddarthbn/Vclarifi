@@ -89,7 +89,7 @@ def load_page():
         'login': {'module_name': 'login_page', 'function_name': 'login', 'requires_login': False},
         'User_Registration': {'module_name': 'user_registration', 'function_name': 'user_registration_entrypoint', 'requires_login': False},
         'forgot': {'module_name': 'forgot', 'function_name': 'render_forgot_password_page', 'requires_login': False},
-        'Survey': {'module_name': 'survey', 'function_name': 'render_survey_page', 'requires_login': True},
+        'Survey': {'module_name': 'survey', 'function_name': 'survey', 'requires_login': True},
         'Dashboard': {'module_name': 'dashboard', 'function_name': 'dashboard', 'requires_login': True},
         'Recommendations': {'module_name': 'recommendations', 'function_name': 'recommendations_page', 'requires_login': True},
     }
