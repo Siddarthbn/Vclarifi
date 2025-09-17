@@ -49,7 +49,7 @@ def get_aws_secrets():
 try:
     aws_secrets = get_aws_secrets()
     if aws_secrets:
-        # --- REFINED LOGIC TO READ FROM A FLAT KEY/VALUE STRUCTURE ---
+        # --- LOGIC TO READ FROM A FLAT KEY/VALUE STRUCTURE ---
         # Database Configuration
         DB_HOST = aws_secrets.get('DB_HOST')
         DB_DATABASE = aws_secrets.get('DB_DATABASE')
@@ -100,7 +100,7 @@ def survey(navigate_to, user_email, **kwargs):
     # --- Paths ---
     # TODO: Update these paths to be correct for your environment
     bg_path = "images/background.jpg"
-    logo_path = "images/VTARA.png"
+    logo_path = "images/vtara.png"
 
     # --- Constants ---
     MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
@@ -416,7 +416,8 @@ def survey(navigate_to, user_email, **kwargs):
             with conn.cursor() as cursor:
                 col_name = f"`{category_to_mark_completed}`"
                 query = f"INSERT INTO Category_Completed (Email_ID, submission_id, {col_name}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE {col_name} = VALUES({col_name})"
-                cursor.execute(query, (current_user_email, submission_id_param, 'Completed')); conn.commit()
+                # REFINED: Use 1 for TINYINT(1) instead of the string 'Completed'
+                cursor.execute(query, (current_user_email, submission_id_param, 1)); conn.commit()
         except Error as e: st.error(f"MySQL Error updating category completion for {category_to_mark_completed}: {e}"); conn.rollback()
         finally: close_db_connection(conn)
 
@@ -432,7 +433,8 @@ def survey(navigate_to, user_email, **kwargs):
                 completion_data_row = cursor.fetchone()
                 if completion_data_row:
                     for cat_k_iter in question_definitions_map.keys():
-                        if completion_data_row.get(cat_k_iter) == 'Completed': loaded_saved_categories.add(cat_k_iter)
+                        # REFINED: Check for 1 (TINYINT) instead of the string 'Completed'
+                        if completion_data_row.get(cat_k_iter) == 1: loaded_saved_categories.add(cat_k_iter)
                 for cat_k_iter, q_defs_iter in question_definitions_map.items():
                     try:
                         cursor.execute(f"SELECT * FROM `{cat_k_iter}` WHERE Email_ID = %s AND submission_id = %s", (current_user_email, submission_id_param))
@@ -474,7 +476,8 @@ def survey(navigate_to, user_email, **kwargs):
                 num_categories_done_in_record = 0
                 all_categories_marked_in_record = False
                 if cat_completed_row:
-                    categories_done_list = [cat_col for cat_col in all_category_keys if cat_completed_row.get(cat_col) == 'Completed']
+                    # REFINED: Check for 1 (TINYINT) instead of the string 'Completed'
+                    categories_done_list = [cat_col for cat_col in all_category_keys if cat_completed_row.get(cat_col) == 1]
                     num_categories_done_in_record = len(categories_done_list)
                     if num_categories_done_in_record == len(all_category_keys): all_categories_marked_in_record = True
                 is_valid_for_calc = (submission_status_overall == 'Completed' and all_categories_marked_in_record and submission_completion_time and submission_completion_time > three_months_ago)
@@ -511,7 +514,7 @@ def survey(navigate_to, user_email, **kwargs):
     def create_team_overall_averages_table(conn):
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""CREATE TABLE IF NOT EXISTS Team_Overall_Averages (id INT AUTO_INCREMENT PRIMARY KEY, organisation_name VARCHAR(255) NOT NULL, admin_email VARCHAR(255), reporting_period_identifier VARCHAR(255) NOT NULL, Leadership_team_avg DECIMAL(3,2), Empower_team_avg DECIMAL(3,2), Sustainability_team_avg DECIMAL(3,2), CulturePulse_team_avg DECIMAL(3,2), Bonding_team_avg DECIMAL(3,2), Influencers_team_avg DECIMAL(3,2), number_of_respondents INT, calculation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY unique_org_period (organisation_name, reporting_period_identifier))""")
+                cursor.execute("""CREATE TABLE IF NOT EXISTS Team_Overall_Averages (id INT AUTO_INCREMENT PRIMARY KEY, organisation_name VARCHAR(255) NOT NULL, admin_email VARCHAR(255), reporting_period_identifier VARCHAR(255) NOT NULL, Leadership_team_avg DECIMAL(5,2), Empower_team_avg DECIMAL(5,2), Sustainability_team_avg DECIMAL(5,2), CulturePulse_team_avg DECIMAL(5,2), Bonding_team_avg DECIMAL(5,2), Influencers_team_avg DECIMAL(5,2), number_of_respondents INT, calculation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY unique_org_period (organisation_name, reporting_period_identifier))""")
                 conn.commit()
         except Error as e: st.error(f"Error creating Team_Overall_Averages table: {e}")
 
@@ -527,7 +530,7 @@ def survey(navigate_to, user_email, **kwargs):
                 cursor.execute("SELECT * FROM Category_Completed WHERE submission_id = %s", (sub_id,))
                 cat_completion_row = cursor.fetchone()
                 if not cat_completion_row: return None
-                completed_count = sum(1 for cat_key in all_category_keys_list if cat_completion_row.get(cat_key) == 'Completed')
+                completed_count = sum(1 for cat_key in all_category_keys_list if cat_completion_row.get(cat_key) == 1)
                 return sub_id if completed_count == len(all_category_keys_list) else None
         except Error as e: logging.error(f"Error in get_valid_submission_id for {member_email}: {e}"); return None
 
@@ -601,7 +604,7 @@ def survey(navigate_to, user_email, **kwargs):
     if 'db_tables_checked' not in st.session_state:
         conn_init = get_db_connection()
         if conn_init:
-            create_team_overall_averages_table(conn_init)
+            # create_team_overall_averages_table(conn_init) # No longer needed if schema is pre-applied
             close_db_connection(conn_init)
             st.session_state.db_tables_checked = True
     
@@ -658,7 +661,6 @@ def survey(navigate_to, user_email, **kwargs):
             admin_org_details = get_admin_organisation_details(user_email)
             admin_org_name = admin_org_details['organisation_name'] if admin_org_details else "Your Organisation"
             with st.expander(f"Admin Panel: Manage Surveys & Team Averages for {admin_org_name}", expanded=True):
-                # ... (The full admin panel code is here) ...
                 tab1, tab2 = st.tabs(["Survey Reminders", "Team Averages"])
                 with tab1:
                     team_members_status, _ = get_team_members_and_status(user_email)
@@ -736,11 +738,19 @@ def survey(navigate_to, user_email, **kwargs):
         st.subheader(f"Category: {current_sel_cat_form}"); st.markdown("---")
         qs_in_curr_cat_form = survey_questions[current_sel_cat_form]; ans_count_curr_cat_form = 0
         for q_key_form, q_text_form in qs_in_curr_cat_form.items():
-            st.markdown(f"**{survey_questions[current_sel_cat_form][q_key_form]}**") # Use full text
+            st.markdown(f"**{q_text_form}**")
             curr_resp_for_q_form = st.session_state.responses[current_sel_cat_form].get(q_key_form, "Select")
             try: resp_idx_form = likert_options.index(curr_resp_for_q_form)
             except ValueError: resp_idx_form = 0
-            selected_val_form = st.radio("", likert_options, index=resp_idx_form, key=f"radio_{current_sel_cat_form}_{q_key_form}_{current_submission_id}", label_visibility="collapsed")
+            
+            selected_val_form = st.radio(
+                q_key_form, # Use a non-empty, unique label for accessibility
+                likert_options,
+                index=resp_idx_form,
+                key=f"radio_{current_sel_cat_form}_{q_key_form}_{current_submission_id}",
+                label_visibility="collapsed"
+            )
+            
             st.session_state.responses[current_sel_cat_form][q_key_form] = selected_val_form
             if selected_val_form != "Select": ans_count_curr_cat_form += 1
         st.markdown("---"); st.markdown(f"<p style='color:#00FF7F; margin-top:15px;'><b>{ans_count_curr_cat_form} / {len(qs_in_curr_cat_form)} answered</b></p>", unsafe_allow_html=True)
