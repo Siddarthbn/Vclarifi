@@ -49,28 +49,26 @@ def get_aws_secrets():
 try:
     aws_secrets = get_aws_secrets()
     if aws_secrets:
-        db_secrets = aws_secrets.get('database', {})
-        email_secrets = aws_secrets.get('email', {})
-
+        # --- REFINED LOGIC TO READ FROM A FLAT KEY/VALUE STRUCTURE ---
         # Database Configuration
-        DB_HOST = db_secrets.get('DB_HOST')
-        DB_DATABASE = db_secrets.get('DB_DATABASE')
-        DB_USER = db_secrets.get('DB_USER')
-        DB_PASSWORD = db_secrets.get('DB_PASSWORD')
+        DB_HOST = aws_secrets.get('DB_HOST')
+        DB_DATABASE = aws_secrets.get('DB_DATABASE')
+        DB_USER = aws_secrets.get('DB_USER')
+        DB_PASSWORD = aws_secrets.get('DB_PASSWORD')
 
         # Email Configuration
-        SENDER_EMAIL = email_secrets.get('SENDER_EMAIL')
-        SENDER_APP_PASSWORD = email_secrets.get('SENDER_APP_PASSWORD')
-        SMTP_SERVER = email_secrets.get('SMTP_SERVER')
-        SMTP_PORT = email_secrets.get('SMTP_PORT')
+        SENDER_EMAIL = aws_secrets.get('SENDER_EMAIL')
+        SENDER_APP_PASSWORD = aws_secrets.get('SENDER_APP_PASSWORD')
+        SMTP_SERVER = aws_secrets.get('SMTP_SERVER')
+        SMTP_PORT = aws_secrets.get('SMTP_PORT')
 
         # Check if all essential secrets were loaded
         if all([DB_HOST, DB_DATABASE, DB_USER, DB_PASSWORD, SENDER_EMAIL, SENDER_APP_PASSWORD, SMTP_SERVER, SMTP_PORT]):
             CONFIG_LOADED_SUCCESSFULLY = True
-            logging.info("Configuration secrets loaded successfully from AWS.")
+            logging.info("Configuration secrets loaded successfully from AWS (flat structure).")
         else:
             CONFIG_LOADED_SUCCESSFULLY = False
-            logging.critical("FATAL: One or more essential secrets are missing from the AWS payload.")
+            logging.critical("FATAL: One or more essential secrets are missing from the AWS payload. Check keys like DB_HOST, SENDER_EMAIL, etc.")
             # Set all to None for consistency if any are missing
             DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
             SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
@@ -89,7 +87,7 @@ except Exception as e:
 
 
 # ---------- MAIN SURVEY FUNCTION ----------
-def survey(navigate_to, user_email,**kwargs):
+def survey(navigate_to, user_email, **kwargs):
     """
     Streamlit function to administer a multi-category survey, save responses,
     track progress, and manage admin features.
@@ -166,7 +164,7 @@ def survey(navigate_to, user_email,**kwargs):
         msg = MIMEText(body_html, 'html')
         msg['Subject'] = subject; msg['From'] = SENDER_EMAIL; msg['To'] = recipient_email
         try:
-            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+            with smtplib.SMTP_SSL(SMTP_SERVER, int(SMTP_PORT), timeout=10) as server:
                 server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
                 server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string())
             logging.info(f"Successfully sent {email_type_for_log} email to {recipient_email}")
