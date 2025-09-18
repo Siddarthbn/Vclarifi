@@ -14,9 +14,6 @@ from botocore.exceptions import ClientError, NoCredentialsError
 # ---------- LOGGING CONFIGURATION ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
-# NOTE: The get_aws_secrets function and the global configuration block have been removed from this file.
-# Secrets are now passed directly into the survey function.
-
 # ---------- MAIN SURVEY FUNCTION ----------
 def survey(navigate_to, user_email, secrets):
     """
@@ -55,7 +52,7 @@ def survey(navigate_to, user_email, secrets):
 
     # --- Paths ---
     bg_path = "images/background.jpg"
-    logo_path = "images/VTARA.png"
+    logo_path = "images/vtara.png"
 
     # --- Constants ---
     MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
@@ -211,7 +208,6 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return None
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # REFINED: Uses 'Email_Id' to match the user_registration schema
                 cursor.execute("SELECT first_name, last_name FROM user_registration WHERE Email_Id = %s", (user_email_param,))
                 return cursor.fetchone()
         except Error as e: st.error(f"Error fetching user details for {user_email_param}: {e}"); return None
@@ -222,7 +218,6 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return None
         try:
             with conn.cursor() as cursor:
-                # REFINED: Uses 'Email_Id' to match the user_registration schema
                 cursor.execute("SELECT roles FROM user_registration WHERE Email_Id = %s LIMIT 1", (user_email_param,))
                 result = cursor.fetchone()
                 return result[0] if result else None
@@ -230,15 +225,20 @@ def survey(navigate_to, user_email, secrets):
         finally: close_db_connection(conn)
 
     def is_admin_of_an_organisation(admin_email_param):
-        conn = get_db_connection();
+        conn = get_db_connection()
         if not conn: return False
+        is_admin = False
         try:
             with conn.cursor(dictionary=True) as cursor:
                 cursor.execute("SELECT COUNT(*) as count FROM admin_team_members WHERE admin_email = %s", (admin_email_param,))
                 result = cursor.fetchone()
-                return result['count'] > 0 if result else False
-        except Error as e: logging.error(f"DB Error checking admin_team_members linkage: {e}"); return False
-        finally: close_db_connection(conn)
+                if result and result['count'] > 0:
+                    is_admin = True
+        except Error as e:
+            logging.error(f"DB Error checking admin status: {e}")
+        finally:
+            close_db_connection(conn)
+        return is_admin
 
     def get_admin_organisation_details(admin_email_param):
         conn = get_db_connection();
@@ -250,69 +250,52 @@ def survey(navigate_to, user_email, secrets):
         except Error as e: st.error(f"Error fetching admin organisation: {e}"); return None
         finally: close_db_connection(conn)
 
-    def get_team_info_for_member(member_email, conn_param):
-        """
-        Finds a team member's admin and counts the total members on that team.
-        """
-        try:
-            with conn_param.cursor(dictionary=True, buffered=True) as cursor:
-                cursor.execute("SELECT admin_email FROM admin_team_members WHERE team_member_email = %s LIMIT 1", (member_email,))
-                result = cursor.fetchone()
-                if not result: return None, 0
-
-                admin_email = result['admin_email']
-                cursor.execute("SELECT COUNT(*) as total_members FROM admin_team_members WHERE admin_email = %s", (admin_email,))
-                count_result = cursor.fetchone()
-                total_members = count_result['total_members'] if count_result else 0
-                return admin_email, total_members
-        except Error as e:
-            logging.error(f"Error in get_team_info_for_member for {member_email}: {e}")
-            return None, 0
-
     def get_or_create_active_submission(user_email_param):
         """
-        Determines the user's survey state.
+        Determines the user's survey state with refined logic for completed surveys.
+        - If 'In Progress', continues session.
+        - If 'Completed' recently, shows a different view for Admins vs. Members.
+        - If 'Completed' long ago, or never started, creates a new session.
         """
-        conn = get_db_connection();
+        conn = get_db_connection()
         if not conn: return None
+
         try:
             with conn.cursor(dictionary=True, buffered=True) as cursor:
-                query_latest = "SELECT submission_id, start_time, completion_time, status FROM Submissions WHERE Email_ID = %s ORDER BY start_time DESC LIMIT 1"
+                query_latest = "SELECT submission_id, completion_time, status FROM Submissions WHERE Email_ID = %s ORDER BY start_time DESC LIMIT 1"
                 cursor.execute(query_latest, (user_email_param,))
                 latest_submission = cursor.fetchone()
-                three_months_ago = datetime.now() - timedelta(days=TEAM_AVERAGE_DATA_WINDOW_DAYS)
 
                 if latest_submission:
+                    # Case 1: Survey is still in progress
                     if latest_submission['status'] == 'In Progress':
                         return {'submission_id': latest_submission['submission_id'], 'action': 'CONTINUE_IN_PROGRESS', 'message': 'Resuming your previous survey session.'}
                     
+                    # Case 2: Survey was completed
                     elif latest_submission['status'] == 'Completed':
-                        if latest_submission['completion_time'] and latest_submission['completion_time'] > three_months_ago:
-                            user_role_local = get_user_role(user_email_param)
-                            
-                            if user_role_local == 'athlete':
-                                return {'submission_id': latest_submission['submission_id'], 'action': 'VIEW_THANKS_RECENT_COMPLETE_ATHLETE', 'message': 'You have completed the survey.'}
-                            
-                            admin_email, total_team_members = get_team_info_for_member(user_email_param, conn)
-                            
-                            if not admin_email:
-                                return {'submission_id': latest_submission['submission_id'], 'action': 'VIEW_THANKS_RECENT_COMPLETE_ATHLETE', 'message': 'Thank you for completing the survey!'}
-
-                            _, valid_completions_count = get_team_members_and_status(admin_email)
-                            
-                            if total_team_members > 0 and valid_completions_count >= total_team_members:
-                                return {'submission_id': latest_submission['submission_id'], 'action': 'VIEW_DASHBOARD_RECENT_COMPLETE', 'message': 'Your entire team has completed the survey! The dashboard is now active.'}
+                        three_months_ago = datetime.now() - timedelta(days=TEAM_AVERAGE_DATA_WINDOW_DAYS)
+                        is_recent = latest_submission['completion_time'] and latest_submission['completion_time'] > three_months_ago
+                        
+                        if is_recent:
+                            # Sub-case 2a: Completed recently - check if user is an Admin
+                            if is_admin_of_an_organisation(user_email_param):
+                                return {'submission_id': latest_submission['submission_id'], 'action': 'SHOW_ADMIN_HUB', 'message': 'Welcome back! Your survey is complete. You can now manage your team.'}
                             else:
-                                message = f'Thank you for completing the survey. The dashboard will unlock when all team members have completed it. ({valid_completions_count}/{total_team_members} complete)'
-                                return {'submission_id': latest_submission['submission_id'], 'action': 'VIEW_WAITING_RECENT_COMPLETE_OTHER', 'message': message}
-
+                                # Sub-case 2b: Completed recently - they are a regular team member
+                                return {'submission_id': latest_submission['submission_id'], 'action': 'SHOW_MEMBER_THANKS', 'message': 'Thank you for completing the survey! Your responses have been recorded.'}
+                
+                # Case 3: No submission found, or latest one is old. Create a new one.
                 insert_query = "INSERT INTO Submissions (Email_ID, start_time, status) VALUES (%s, %s, %s)"
                 cursor.execute(insert_query, (user_email_param, datetime.now(), 'In Progress'))
                 conn.commit()
                 new_submission_id = cursor.lastrowid
                 return {'submission_id': new_submission_id, 'action': 'START_NEW', 'message': 'Starting a new survey session.'}
-        except Error as e: st.error(f"MySQL Error managing submission: {e}"); return None
-        finally: close_db_connection(conn)
+
+        except Error as e:
+            st.error(f"MySQL Error managing submission: {e}")
+            return None
+        finally:
+            close_db_connection(conn)
 
     def update_submission_to_completed(submission_id_param):
         conn = get_db_connection()
@@ -371,7 +354,6 @@ def survey(navigate_to, user_email, secrets):
         try:
             with conn.cursor() as cursor:
                 col_name = f"`{category_to_mark_completed}`"
-                # REFINED: Now uses integer 1 to match TINYINT(1) schema
                 query = f"INSERT INTO Category_Completed (Email_ID, submission_id, {col_name}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE {col_name} = VALUES({col_name})"
                 cursor.execute(query, (current_user_email, submission_id_param, 1))
                 conn.commit()
@@ -390,7 +372,6 @@ def survey(navigate_to, user_email, secrets):
                 completion_data_row = cursor.fetchone()
                 if completion_data_row:
                     for cat_k_iter in question_definitions_map.keys():
-                        # REFINED: Checks for integer 1 instead of string 'Completed'
                         if completion_data_row.get(cat_k_iter) == 1:
                             loaded_saved_categories.add(cat_k_iter)
                 for cat_k_iter, q_defs_iter in question_definitions_map.items():
@@ -434,7 +415,6 @@ def survey(navigate_to, user_email, secrets):
                 num_categories_done_in_record = 0
                 all_categories_marked_in_record = False
                 if cat_completed_row:
-                    # REFINED: Checks for integer 1 instead of string 'Completed'
                     categories_done_list = [cat_col for cat_col in all_category_keys if cat_completed_row.get(cat_col) == 1]
                     num_categories_done_in_record = len(categories_done_list)
                     if num_categories_done_in_record == len(all_category_keys): all_categories_marked_in_record = True
@@ -584,9 +564,6 @@ def survey(navigate_to, user_email, secrets):
         st.session_state.submission_message = submission_info['message']
         st.session_state.submission_status_checked = True
         st.session_state.current_user_for_status_check = user_email
-        st.session_state.user_role = get_user_role(user_email)
-        st.session_state.is_admin_for_reminders = is_admin_of_an_organisation(user_email)
-        st.session_state.latest_team_averages_display = None
         st.rerun()
     
     submission_action = st.session_state.get('submission_action', '')
@@ -595,71 +572,65 @@ def survey(navigate_to, user_email, secrets):
     if st.session_state.get('submission_message'):
         st.info(st.session_state.submission_message)
 
-    COMPLETED_SURVEY_ACTIONS = {'VIEW_DASHBOARD_RECENT_COMPLETE', 'FINISHED_DASHBOARD_READY','VIEW_THANKS_RECENT_COMPLETE_ATHLETE', 'FINISHED_ATHLETE','VIEW_WAITING_RECENT_COMPLETE_OTHER', 'FINISHED_WAITING'}
+    COMPLETED_SURVEY_ACTIONS = {'SHOW_ADMIN_HUB', 'SHOW_MEMBER_THANKS'}
 
-    if submission_action == 'VIEW_DASHBOARD_RECENT_COMPLETE':
-        if st.button("View My Dashboard", key="view_dashboard_cta", use_container_width=True): navigate_to("Dashboard")
-    
-    if "responses" not in st.session_state or st.session_state.get('submission_id_loaded_for_survey') != current_submission_id:
-        st.session_state.responses, st.session_state.saved_categories, st.session_state.category_avgs = load_user_progress(user_email, current_submission_id, survey_questions, likert_options)
-        st.session_state.submission_id_loaded_for_survey = current_submission_id
-        st.session_state.selected_category = None
+    if submission_action not in COMPLETED_SURVEY_ACTIONS:
+        if "responses" not in st.session_state or st.session_state.get('submission_id_loaded_for_survey') != current_submission_id:
+            st.session_state.responses, st.session_state.saved_categories, st.session_state.category_avgs = load_user_progress(user_email, current_submission_id, survey_questions, likert_options)
+            st.session_state.submission_id_loaded_for_survey = current_submission_id
+            st.session_state.selected_category = None
 
-    is_admin = st.session_state.get('is_admin_for_reminders')
-    is_on_main_screen = st.session_state.get('selected_category') is None
-    admin_has_completed_survey = st.session_state.get('submission_action') in COMPLETED_SURVEY_ACTIONS
-
-    if is_admin and is_on_main_screen:
-        st.markdown("---")
-        if admin_has_completed_survey:
-            admin_org_details = get_admin_organisation_details(user_email)
-            admin_org_name = admin_org_details['organisation_name'] if admin_org_details else "Your Organisation"
-            with st.expander(f"Admin Panel: Manage Surveys & Team Averages for {admin_org_name}", expanded=True):
-                tab1, tab2 = st.tabs(["Survey Reminders", "Team Averages"])
-                with tab1:
-                    team_members_status, _ = get_team_members_and_status(user_email)
-                    if not team_members_status: st.info("No team members found.")
+    if submission_action == 'SHOW_ADMIN_HUB':
+        admin_org_details = get_admin_organisation_details(user_email)
+        admin_org_name = admin_org_details['organisation_name'] if admin_org_details else "Your Organisation"
+        
+        with st.expander(f"Admin Panel: Manage Surveys & Team Averages for {admin_org_name}", expanded=True):
+            tab1, tab2 = st.tabs(["Survey Reminders", "Team Averages"])
+            with tab1:
+                team_members_status, _ = get_team_members_and_status(user_email)
+                if not team_members_status: st.info("No team members found.")
+                else:
+                    df_team_status = pd.DataFrame(team_members_status); st.dataframe(df_team_status[['name', 'email', 'status_display']], use_container_width=True, hide_index=True)
+                    remindable_members = [m for m in team_members_status if m['needs_reminder']]
+                    if not remindable_members: st.success("All team members are up-to-date!")
                     else:
-                        df_team_status = pd.DataFrame(team_members_status); st.dataframe(df_team_status[['name', 'email', 'status_display']], use_container_width=True, hide_index=True)
-                        remindable_members = [m for m in team_members_status if m['needs_reminder']]
-                        if not remindable_members: st.success("All team members are up-to-date!")
-                        else:
-                            if st.button(f"Send Reminders to {len(remindable_members)} Member(s)", key="admin_send_reminders_button"):
-                                admin_user_details_for_email = get_user_details(user_email)
-                                admin_name_for_email_send = f"{admin_user_details_for_email['first_name']} {admin_user_details_for_email['last_name']}" if admin_user_details_for_email else user_email
-                                sent_reminders, failed_reminders = 0, 0
-                                with st.spinner("Sending reminders..."):
-                                    for member_to_remind in remindable_members:
-                                        if send_survey_reminder_email(member_to_remind['email'], member_to_remind['name'], admin_name_for_email_send, admin_org_name): sent_reminders += 1
-                                        else: failed_reminders += 1
-                                if sent_reminders > 0: st.success(f"Sent {sent_reminders} reminder(s).")
-                                if failed_reminders > 0: st.warning(f"Failed to send {failed_reminders} reminder(s).")
-                                st.rerun()
-                with tab2:
-                    st.subheader(f"Team Overall Averages for {admin_org_name}")
-                    _, valid_for_calc_count = get_team_members_and_status(user_email)
-                    st.write(f"Members with valid recent completions: **{valid_for_calc_count}**")
-                    if valid_for_calc_count >= MIN_RESPONDENTS_FOR_TEAM_AVERAGE:
-                        if st.button(f"Calculate/Recalculate Averages for {datetime.now().strftime('%B %Y')}", key="admin_calc_team_avg_button"):
-                            with st.spinner(f"Calculating averages..."): handle_calculate_team_averages(user_email, admin_org_name)
-                    else: st.info(f"At least {MIN_RESPONDENTS_FOR_TEAM_AVERAGE} valid completion(s) required. Currently: {valid_for_calc_count}.")
-                    current_reporting_period_display = datetime.now().strftime('%Y-%m')
-                    if st.session_state.get('latest_team_averages_display') is None:
-                        conn_display = get_db_connection()
-                        if conn_display:
-                            st.session_state.latest_team_averages_display = get_latest_team_overall_averages(admin_org_name, current_reporting_period_display, conn_display)
-                            close_db_connection(conn_display)
-                    latest_team_avgs_data = st.session_state.get('latest_team_averages_display')
-                    if latest_team_avgs_data:
-                        st.write(f"**Last Calculated Averages for Period: {latest_team_avgs_data['reporting_period_identifier']}**")
-                        avg_data_to_show = {cat_key_show: latest_team_avgs_data.get(f"{cat_key_show}_team_avg") for cat_key_show in all_category_keys}
-                        st.dataframe(pd.Series(avg_data_to_show, name="Team Average Score").dropna().round(2), use_container_width=True)
-                    else: st.write(f"No team averages calculated for {current_reporting_period_display}.")
-        else:
-            st.info("🔒 **Admin Panel Locked:** Please complete your own survey to unlock admin features.")
+                        if st.button(f"Send Reminders to {len(remindable_members)} Member(s)", key="admin_send_reminders_button"):
+                            admin_user_details_for_email = get_user_details(user_email)
+                            admin_name_for_email_send = f"{admin_user_details_for_email['first_name']} {admin_user_details_for_email['last_name']}" if admin_user_details_for_email else user_email
+                            sent_reminders, failed_reminders = 0, 0
+                            with st.spinner("Sending reminders..."):
+                                for member_to_remind in remindable_members:
+                                    if send_survey_reminder_email(member_to_remind['email'], member_to_remind['name'], admin_name_for_email_send, admin_org_name): sent_reminders += 1
+                                    else: failed_reminders += 1
+                            if sent_reminders > 0: st.success(f"Sent {sent_reminders} reminder(s).")
+                            if failed_reminders > 0: st.warning(f"Failed to send {failed_reminders} reminder(s).")
+                            st.rerun()
+            with tab2:
+                st.subheader(f"Team Overall Averages for {admin_org_name}")
+                _, valid_for_calc_count = get_team_members_and_status(user_email)
+                st.write(f"Members with valid recent completions: **{valid_for_calc_count}**")
+                if valid_for_calc_count >= MIN_RESPONDENTS_FOR_TEAM_AVERAGE:
+                    if st.button(f"Calculate/Recalculate Averages for {datetime.now().strftime('%B %Y')}", key="admin_calc_team_avg_button"):
+                        with st.spinner(f"Calculating averages..."): handle_calculate_team_averages(user_email, admin_org_name)
+                else: st.info(f"At least {MIN_RESPONDENTS_FOR_TEAM_AVERAGE} valid completion(s) required. Currently: {valid_for_calc_count}.")
+                current_reporting_period_display = datetime.now().strftime('%Y-%m')
+                if st.session_state.get('latest_team_averages_display') is None:
+                    conn_display = get_db_connection()
+                    if conn_display:
+                        st.session_state.latest_team_averages_display = get_latest_team_overall_averages(admin_org_name, current_reporting_period_display, conn_display)
+                        close_db_connection(conn_display)
+                latest_team_avgs_data = st.session_state.get('latest_team_averages_display')
+                if latest_team_avgs_data:
+                    st.write(f"**Last Calculated Averages for Period: {latest_team_avgs_data['reporting_period_identifier']}**")
+                    avg_data_to_show = {cat_key_show: latest_team_avgs_data.get(f"{cat_key_show}_team_avg") for cat_key_show in all_category_keys}
+                    st.dataframe(pd.Series(avg_data_to_show, name="Team Average Score").dropna().round(2), use_container_width=True)
+                else: st.write(f"No team averages calculated for {current_reporting_period_display}.")
 
-    if st.session_state.get('selected_category') is None:
-        if submission_action not in COMPLETED_SURVEY_ACTIONS:
+        if st.button("View My Dashboard", key="view_dashboard_cta", use_container_width=True):
+            navigate_to("Dashboard")
+
+    if submission_action not in COMPLETED_SURVEY_ACTIONS:
+        if st.session_state.get('selected_category') is None:
             st.title("QUESTIONNAIRE"); st.subheader("Choose a category to begin or continue:")
             answered_overall = sum(sum(1 for r_val in cat_resps.values() if r_val != "Select") for cat_resps in st.session_state.responses.values())
             total_overall = sum(len(q_defs) for q_defs in survey_questions.values())
@@ -686,38 +657,38 @@ def survey(navigate_to, user_email, secrets):
                 user_name_for_comp_email = f"{user_details_for_comp_email['first_name']} {user_details_for_comp_email['last_name']}" if user_details_for_comp_email else user_email
                 send_survey_completion_email(user_email, user_name_for_comp_email)
                 st.session_state.submission_status_checked = False; st.session_state.submission_message_shown = None; st.rerun()
-    else:
-        current_sel_cat_form = st.session_state.selected_category
-        st.subheader(f"Category: {current_sel_cat_form}"); st.markdown("---")
-        qs_in_curr_cat_form = survey_questions[current_sel_cat_form]; ans_count_curr_cat_form = 0
-        for q_key_form, q_text_form in qs_in_curr_cat_form.items():
-            st.markdown(f"**{survey_questions[current_sel_cat_form][q_key_form]}**")
-            curr_resp_for_q_form = st.session_state.responses[current_sel_cat_form].get(q_key_form, "Select")
-            try: resp_idx_form = likert_options.index(curr_resp_for_q_form)
-            except ValueError: resp_idx_form = 0
-            selected_val_form = st.radio("", likert_options, index=resp_idx_form, key=f"radio_{current_sel_cat_form}_{q_key_form}_{current_submission_id}", label_visibility="collapsed")
-            st.session_state.responses[current_sel_cat_form][q_key_form] = selected_val_form
-            if selected_val_form != "Select": ans_count_curr_cat_form += 1
-        st.markdown("---"); st.markdown(f"<p style='color:#00FF7F; margin-top:15px;'><b>{ans_count_curr_cat_form} / {len(qs_in_curr_cat_form)} answered</b></p>", unsafe_allow_html=True)
-        if ans_count_curr_cat_form == len(qs_in_curr_cat_form):
-            is_final_cat_overall_form = (len(st.session_state.saved_categories) == len(all_category_keys) - 1 and current_sel_cat_form not in st.session_state.saved_categories)
-            all_cats_already_saved_form = (len(st.session_state.saved_categories) == len(all_category_keys) and current_sel_cat_form in st.session_state.saved_categories)
-            btn_text_form = "Submit Survey & Finish" if (is_final_cat_overall_form or all_cats_already_saved_form) else ("Update & Continue" if current_sel_cat_form in st.session_state.saved_categories else "Save and Continue")
-            if st.button(btn_text_form, key=f"save_btn_{current_sel_cat_form}", use_container_width=True):
-                avg_score_calc = save_category_to_db(current_sel_cat_form, st.session_state.responses, user_email, current_submission_id)
-                if avg_score_calc is not None:
-                    st.session_state.saved_categories.add(current_sel_cat_form)
-                    save_category_completion(current_sel_cat_form, user_email, current_submission_id)
-                    st.session_state.category_avgs[f"{current_sel_cat_form}_avg"] = avg_score_calc
-                    save_averages_to_db(st.session_state.category_avgs, user_email, current_submission_id)
-                    st.success(f"Progress for '{current_sel_cat_form}' saved!")
-                    if len(st.session_state.saved_categories) == len(all_category_keys):
-                        update_submission_to_completed(current_submission_id)
-                        user_details_final_email = get_user_details(user_email)
-                        user_name_final_email = f"{user_details_final_email['first_name']} {user_details_final_email['last_name']}" if user_details_final_email else user_email
-                        send_survey_completion_email(user_email, user_name_final_email)
-                        st.session_state.submission_status_checked = False; st.session_state.submission_message_shown = None
-                    st.session_state.selected_category = None; st.rerun()
-                else: st.error(f"Failed to save progress for '{current_sel_cat_form}'. Please try again.")
         else:
-            st.caption("Please answer all questions in this category to save.")
+            current_sel_cat_form = st.session_state.selected_category
+            st.subheader(f"Category: {current_sel_cat_form}"); st.markdown("---")
+            qs_in_curr_cat_form = survey_questions[current_sel_cat_form]; ans_count_curr_cat_form = 0
+            for q_key_form, q_text_form in qs_in_curr_cat_form.items():
+                st.markdown(f"**{survey_questions[current_sel_cat_form][q_key_form]}**")
+                curr_resp_for_q_form = st.session_state.responses[current_sel_cat_form].get(q_key_form, "Select")
+                try: resp_idx_form = likert_options.index(curr_resp_for_q_form)
+                except ValueError: resp_idx_form = 0
+                selected_val_form = st.radio("", likert_options, index=resp_idx_form, key=f"radio_{current_sel_cat_form}_{q_key_form}_{current_submission_id}", label_visibility="collapsed")
+                st.session_state.responses[current_sel_cat_form][q_key_form] = selected_val_form
+                if selected_val_form != "Select": ans_count_curr_cat_form += 1
+            st.markdown("---"); st.markdown(f"<p style='color:#00FF7F; margin-top:15px;'><b>{ans_count_curr_cat_form} / {len(qs_in_curr_cat_form)} answered</b></p>", unsafe_allow_html=True)
+            if ans_count_curr_cat_form == len(qs_in_curr_cat_form):
+                is_final_cat_overall_form = (len(st.session_state.saved_categories) == len(all_category_keys) - 1 and current_sel_cat_form not in st.session_state.saved_categories)
+                all_cats_already_saved_form = (len(st.session_state.saved_categories) == len(all_category_keys) and current_sel_cat_form in st.session_state.saved_categories)
+                btn_text_form = "Submit Survey & Finish" if (is_final_cat_overall_form or all_cats_already_saved_form) else ("Update & Continue" if current_sel_cat_form in st.session_state.saved_categories else "Save and Continue")
+                if st.button(btn_text_form, key=f"save_btn_{current_sel_cat_form}", use_container_width=True):
+                    avg_score_calc = save_category_to_db(current_sel_cat_form, st.session_state.responses, user_email, current_submission_id)
+                    if avg_score_calc is not None:
+                        st.session_state.saved_categories.add(current_sel_cat_form)
+                        save_category_completion(current_sel_cat_form, user_email, current_submission_id)
+                        st.session_state.category_avgs[f"{current_sel_cat_form}_avg"] = avg_score_calc
+                        save_averages_to_db(st.session_state.category_avgs, user_email, current_submission_id)
+                        st.success(f"Progress for '{current_sel_cat_form}' saved!")
+                        if len(st.session_state.saved_categories) == len(all_category_keys):
+                            update_submission_to_completed(current_submission_id)
+                            user_details_final_email = get_user_details(user_email)
+                            user_name_final_email = f"{user_details_final_email['first_name']} {user_details_final_email['last_name']}" if user_details_final_email else user_email
+                            send_survey_completion_email(user_email, user_name_final_email)
+                            st.session_state.submission_status_checked = False; st.session_state.submission_message_shown = None
+                        st.session_state.selected_category = None; st.rerun()
+                    else: st.error(f"Failed to save progress for '{current_sel_cat_form}'. Please try again.")
+            else:
+                st.caption("Please answer all questions in this category to save.")
