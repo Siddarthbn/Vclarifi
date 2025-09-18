@@ -33,9 +33,6 @@ BG_IMAGE_PATH = os.path.join("images", "bg.jpg")
 def get_aws_secrets():
     """
     Fetches secrets from AWS Secrets Manager.
-
-    This function is designed for secrets stored as key-value pairs, which the AWS API
-    returns as a single JSON string. It includes robust error handling.
     """
     secret_name = "production/vclarifi/secrets"  # Your secret's unique name/path
     region_name = "us-east-1"
@@ -49,7 +46,6 @@ def get_aws_secrets():
         logging.info("Secrets Loaded Successfully from AWS.")
         return json.loads(secret_string)
     except Exception as e:
-        # Log the full error for debugging but show a user-friendly message
         logging.error(f"AWS Secrets Manager Error: {e}")
         st.error("FATAL: Could not retrieve application secrets from AWS.")
         st.error("Please contact support and check IAM permissions and secret name.")
@@ -75,12 +71,11 @@ def set_background(image_path, default_color_hex="#438454"):
         encoded_image = encode_image(image_path)
         if encoded_image:
             lower_path = image_path.lower()
+            mime_type = "application/octet-stream"
             if lower_path.endswith((".jpg", ".jpeg")):
                 mime_type = "image/jpeg"
             elif lower_path.endswith(".png"):
                 mime_type = "image/png"
-            else:
-                mime_type = "application/octet-stream"
             bg_style = f"""
                 background-image: url('data:{mime_type};base64,{encoded_image}');
                 background-size: cover; background-position: center;
@@ -328,7 +323,8 @@ def format_results_for_email(org_data, sub_vars_map, benchmark):
     return body
 
 # -------------------- Main Dashboard ------------------
-def dashboard(navigate_to, user_email):
+# REFINED: Added **kwargs to accept and ignore extra arguments like 'secrets'
+def dashboard(navigate_to, user_email, **kwargs):
     """Renders the main dashboard page."""
     set_background(BG_IMAGE_PATH)
 
@@ -380,7 +376,8 @@ def dashboard(navigate_to, user_email):
     _, df_worst = display_sub_category_performance_table(org_data, sub_vars_map, "Worst")
     display_insight_text(df_best, df_worst, benchmark)
 
-def placeholder_page(title, navigate_to):
+# REFINED: Added **kwargs to accept and ignore extra arguments
+def placeholder_page(title, navigate_to, **kwargs):
     set_background(BG_IMAGE_PATH)
     display_header_with_logo_and_text(title, LOGO_PATH, st.session_state.get('org_name_for_header', "Organization"))
     st.info(f"The '{title.strip()}' feature is under construction.")
@@ -393,5 +390,15 @@ if __name__ == "__main__":
     if 'user_email' not in st.session_state: st.session_state.user_email = 'admin_alpha@example.com'
 
     def nav_to(page_name): st.session_state.page = page_name; st.rerun()
-    page_map = {"Dashboard": lambda: dashboard(nav_to, st.session_state.user_email)}
-    page_map.get(st.session_state.page, lambda: st.error("Page not found."))()
+    
+    # This map now calls functions that can accept extra arguments without erroring
+    page_map = {"Dashboard": lambda: dashboard(navigate_to=nav_to, user_email=st.session_state.user_email)}
+    
+    page_func = page_map.get(st.session_state.page)
+    if page_func:
+        page_func()
+    else:
+        st.error("Page not found.")
+        st.session_state.page = 'Dashboard'
+        if st.button("Go to Dashboard"):
+            st.rerun()
