@@ -14,7 +14,7 @@ import logging
 
 # --- Configuration ---
 BG_IMAGE_PATH = "images/background.jpg"
-LOGO_IMAGE_PATH = "images/VTARA.png"
+LOGO_IMAGE_PATH = "images/vtara.png"
 GEMINI_MODEL = "models/gemini-1.5-flash"
 
 # --- Survey Questions Dictionary ---
@@ -258,7 +258,6 @@ def get_score_indicator_html(score):
 @st.cache_data
 def fetch_organization_data(user_email):
     """Fetches organization data using credentials from AWS Secrets Manager."""
-    # REFINED: Uses get_aws_secrets() instead of st.secrets
     secrets = get_aws_secrets()
     if not secrets:
         st.error("❌ Database connection failed: Could not load secrets from AWS.")
@@ -289,24 +288,28 @@ def fetch_organization_data(user_email):
             st.warning(f"No users found for organization '{org_name}'.")
             return None, org_name
 
-        tables_and_db_cols = {
-            "Leadership": ["Leadership_avg"], "Empower": ["Empower_avg"],
-            "Sustainability": ["Sustainability_avg"], "CulturePulse": ["CulturePulse_avg"],
-            "Bonding": ["Bonding_avg"], "Influencers": ["Influencers_avg"]
-        }
-        all_latest_user_data = []
-
-        for table, cols in tables_and_db_cols.items():
-            query = f"""
-            SELECT {', '.join(cols)} FROM (
-                SELECT {', '.join(cols)}, ROW_NUMBER() OVER(PARTITION BY Email_Id ORDER BY ID DESC) as rn
-                FROM {table} WHERE Email_Id IN ({','.join(['%s'] * len(org_emails))})
-            ) ranked_data WHERE rn = 1;"""
-            cursor.execute(query, tuple(org_emails))
-            all_latest_user_data.extend(cursor.fetchall())
+        # REFINED: Query the Averages table directly
+        avg_cols = [
+            "Leadership_avg", "Influencers_avg", "Bonding_avg",
+            "CulturePulse_avg", "Sustainability_avg", "Empower_avg"
+        ]
+        placeholders = ','.join(['%s'] * len(org_emails))
+        
+        query = f"""
+            SELECT {', '.join(avg_cols)}
+            FROM (
+                SELECT *,
+                       ROW_NUMBER() OVER(PARTITION BY Email_ID ORDER BY submission_id DESC) as rn
+                FROM Averages
+                WHERE Email_ID IN ({placeholders})
+            ) ranked_data
+            WHERE rn = 1;
+        """
+        cursor.execute(query, tuple(org_emails))
+        all_latest_user_data = cursor.fetchall()
 
         if not all_latest_user_data:
-            st.warning(f"No survey data found for organization '{org_name}'.")
+            st.warning(f"No survey data found for organization '{org_name}' in the Averages table.")
             return None, org_name
 
         df_combined = pd.DataFrame(all_latest_user_data)
@@ -326,14 +329,12 @@ def fetch_organization_data(user_email):
 @st.cache_data(show_spinner=False)
 def generate_recommendations(_category_name, average_score, questions_context):
     """Generates recommendations using Gemini API key from AWS Secrets Manager."""
-    # REFINED: Uses get_aws_secrets() instead of st.secrets
     secrets = get_aws_secrets()
     if not secrets:
         st.error("Failed to generate recommendations: Could not load secrets from AWS.")
         return "Sorry, we were unable to generate recommendations at this time."
 
     try:
-        # Assuming your Gemini API key is stored with the key "GEMINI_API_KEY"
         genai.configure(api_key=secrets["GEMINI_API_KEY"])
         model = genai.GenerativeModel(model_name=GEMINI_MODEL)
         category_questions = questions_context.get(_category_name, {})
@@ -484,3 +485,4 @@ if __name__ == "__main__":
         st.write("This is the main dashboard.")
         if st.button("Go to Recommendations"):
             nav_to("Recommendations")
+
