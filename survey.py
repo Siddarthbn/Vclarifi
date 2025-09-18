@@ -8,96 +8,46 @@ import smtplib
 from email.mime.text import MIMEText
 import numpy as np
 import logging
-import boto3
 import json
 from botocore.exceptions import ClientError, NoCredentialsError
 
 # ---------- LOGGING CONFIGURATION ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
-# ---------- AWS SECRETS MANAGER INTEGRATION ----------
-@st.cache_data(ttl=600)  # Cache for 10 minutes
-def get_aws_secrets(secret_name: str, region_name: str) -> dict | None:
-    """
-    Fetches and parses a JSON secret from AWS Secrets Manager.
-
-    Args:
-        secret_name (str): The name or ARN of the secret.
-        region_name (str): The AWS region where the secret is stored.
-
-    Returns:
-        dict | None: A dictionary containing the secret key-value pairs,
-                     or None if an error occurs.
-    """
-    session = boto3.session.Session()
-    client = session.client(service_name='secretsmanager', region_name=region_name)
-
-    try:
-        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-        secret_string = get_secret_value_response['SecretString']
-        logging.info("Secrets loaded successfully from AWS Secrets Manager.")
-        return json.loads(secret_string)
-
-    except NoCredentialsError as e:
-        logging.critical(f"AWS credentials not found. Configure IAM role or credentials. Error: {e}")
-        st.error("FATAL: AWS credentials not configured.")
-        return None
-
-    except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code")
-        if error_code == 'ResourceNotFoundException':
-            logging.error(f"The requested secret '{secret_name}' was not found.")
-            st.error(f"FATAL: The secret named '{secret_name}' could not be found.")
-        elif error_code == 'AccessDeniedException':
-            logging.error(f"Access denied for secret '{secret_name}'. Check IAM permissions. Error: {e}")
-            st.error("FATAL: Access denied. Check application's IAM permissions for Secrets Manager.")
-        else:
-            logging.error(f"An unexpected AWS ClientError occurred: {e}")
-            st.error("FATAL: An unexpected error occurred while fetching secrets from AWS.")
-        return None
-        
-    except Exception as e:
-        logging.error(f"An unknown error occurred while fetching secrets: {e}")
-        st.error("FATAL: An unknown error occurred. Please contact support.")
-        return None
-
-# ---------- GLOBAL CONFIGURATION (ROBUST STARTUP) ----------
-try:
-    SECRET_NAME = "production/vclarifi/secrets"
-    REGION_NAME = "us-east-1"
-    secrets = get_aws_secrets(secret_name=SECRET_NAME, region_name=REGION_NAME)
-    
-    if secrets:
-        # Database Configuration
-        DB_HOST = secrets['DB_HOST']
-        DB_USER = secrets['DB_USER']
-        DB_PASSWORD = secrets['DB_PASSWORD']
-        DB_DATABASE = "Vclarifi"  # Database name as specified
-
-        # Email Configuration
-        SENDER_EMAIL = secrets['SENDER_EMAIL']
-        SENDER_APP_PASSWORD = secrets['SENDER_APP_PASSWORD']
-        SMTP_SERVER = secrets['SMTP_SERVER']
-        SMTP_PORT = secrets['SMTP_PORT']
-
-        CONFIG_LOADED_SUCCESSFULLY = True
-        logging.info("Configuration secrets loaded successfully from AWS Secrets Manager.")
-    else:
-        raise ValueError("Failed to retrieve secrets from AWS.")
-
-except (KeyError, ValueError) as e:
-    logging.critical(f"FATAL: Could not read secrets. Check AWS secret structure and keys. Error: {e}")
-    DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
-    SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
-    CONFIG_LOADED_SUCCESSFULLY = False
-
+# NOTE: The get_aws_secrets function and the global configuration block have been removed from this file.
+# Secrets are now passed directly into the survey function.
 
 # ---------- MAIN SURVEY FUNCTION ----------
-def survey(navigate_to, user_email):
+def survey(navigate_to, user_email, secrets):
     """
-    Streamlit function to administer a multi-category survey, save responses,
-    track progress, and manage admin features.
+    Streamlit function to administer a survey. It now receives secrets as an argument.
     """
+    # --- Process Passed-in Secrets ---
+    try:
+        if secrets:
+            # Database Configuration
+            DB_HOST = secrets['DB_HOST']
+            DB_USER = secrets['DB_USER']
+            DB_PASSWORD = secrets['DB_PASSWORD']
+            DB_DATABASE = "Vclarifi"  # Database name as specified
+
+            # Email Configuration
+            SENDER_EMAIL = secrets['SENDER_EMAIL']
+            SENDER_APP_PASSWORD = secrets['SENDER_APP_PASSWORD']
+            SMTP_SERVER = secrets['SMTP_SERVER']
+            SMTP_PORT = secrets['SMTP_PORT']
+
+            CONFIG_LOADED_SUCCESSFULLY = True
+            logging.info("Configuration secrets successfully processed.")
+        else:
+            raise ValueError("Received an empty secrets object.")
+
+    except (KeyError, ValueError) as e:
+        logging.critical(f"FATAL: Could not read secrets passed into function. Check keys. Error: {e}")
+        DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
+        SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
+        CONFIG_LOADED_SUCCESSFULLY = False
+
     # --- Initial Configuration Check ---
     if not CONFIG_LOADED_SUCCESSFULLY:
         st.error("Application is critically misconfigured. Cannot initialize survey. Please contact an administrator.")
