@@ -40,38 +40,42 @@ def get_aws_secrets():
         st.error("FATAL: Could not retrieve application secrets from AWS.")
         st.error("Please contact support and check IAM permissions and secret name.")
         return None
-
 # ---------- GLOBAL CONFIGURATION (ROBUST STARTUP) ----------
-# This block loads secrets from AWS. If it fails, it sets them to None
-# and logs an error, preventing the app from crashing on startup.
+# This block is updated to work with a FLAT key-value secret structure.
 try:
-    secrets = get_aws_secrets()
+    SECRET_NAME = "production/vclarifi/secrets"
+    REGION_NAME = "us-east-1"
+    
+    secrets = get_aws_secrets(secret_name=SECRET_NAME, region_name=REGION_NAME)
+    
     if secrets:
+        # --- Direct assignment for a flat structure ---
         # Database Configuration
-        DB_HOST = secrets['database']['DB_HOST']
-        DB_DATABASE = secrets['database']['DB_DATABASE']
-        DB_USER = secrets['database']['DB_USER']
-        DB_PASSWORD = secrets['database']['DB_PASSWORD']
+        DB_HOST = secrets['DB_HOST']
+        DB_DATABASE = secrets['DB_DATABASE']
+        DB_USER = secrets['DB_USER']
+        DB_PASSWORD = secrets['DB_PASSWORD']
 
         # Email Configuration
-        SENDER_EMAIL = secrets['email']['SENDER_EMAIL']
-        SENDER_APP_PASSWORD = secrets['email']['SENDER_APP_PASSWORD']
-        SMTP_SERVER = secrets['email']['SMTP_SERVER']
-        SMTP_PORT = secrets['email']['SMTP_PORT']
+        SENDER_EMAIL = secrets['SENDER_EMAIL']
+        SENDER_APP_PASSWORD = secrets['SENDER_APP_PASSWORD']
+        SMTP_SERVER = secrets['SMTP_SERVER']
+        SMTP_PORT = secrets['SMTP_PORT']
+        # --- End of direct assignment ---
 
         CONFIG_LOADED_SUCCESSFULLY = True
         logging.info("Configuration secrets loaded successfully from AWS Secrets Manager.")
     else:
-        # This handles the case where get_aws_secrets() returns None
         raise ValueError("Failed to retrieve secrets from AWS.")
 
 except (KeyError, TypeError, ValueError) as e:
-    logging.critical(f"FATAL: Could not read secrets from AWS Secrets Manager. Check IAM permissions and secret structure. Error: {e}")
+    # KeyError will now be more specific, e.g., "'DB_HOST' not found"
+    logging.critical(f"FATAL: Could not read secrets. Check if the key '{e}' exists in your AWS secret. Error: {e}")
+    
     # Set config variables to None so the app can still load without a NameError.
     DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
     SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
     CONFIG_LOADED_SUCCESSFULLY = False
-
 
 # ---------- MAIN SURVEY FUNCTION ----------
 def survey(navigate_to, user_email,secrets):
