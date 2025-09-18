@@ -103,7 +103,6 @@ def set_background(image_path, default_color_hex="#438454"):
             justify-content: space-between; align-items: center;
         }}
         h1, h2, h3, h4, h5, h6, label, .st-b3, .st-ag, .st-be {{ color: white !important; }}
-        .st-emotion-cache-1r6dm1r p {{ color: white !important; }}
         .stDataFrame th {{ background-color: #333333; color: white; }}
         .stDataFrame td {{ background-color: #1a1a1a; color: white; }}
         .stSelectbox > div[data-baseweb="select"] > div:first-child {{
@@ -119,19 +118,12 @@ def set_background(image_path, default_color_hex="#438454"):
             background-color: #1a1a1a; padding: 15px; border-radius: 8px;
             margin-top: 15px; min-height: 180px; border: 1px solid #333333;
         }}
-        .insight-section-container p {{ text-align: justify; }}
+        /* MODIFIED CSS: Ensure text inside insight box is white */
+        .insight-section-container p {{
+            color: white !important;
+            text-align: justify;
+        }}
         .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
-        
-        /* NEW CSS for white containers */
-        .white-container {{
-            background-color: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }}
-        .white-container h2, .white-container h3, .white-container .st-emotion-cache-1r6dm1r p {{
-            color: black !important;
-        }}
         </style>
     """, unsafe_allow_html=True)
 
@@ -253,17 +245,17 @@ def plot_category_scores(scores_data, categories, benchmark=5.5):
     
     values = list(filtered_scores.values())
     colors = [get_color_for_score(v) for v in values]
-    fig = go.Figure(go.Bar(x=list(filtered_scores.keys()), y=values, marker_color=colors, text=[f'{v:.2f}' for v in values], textposition='outside', textfont_color='black'))
-    fig.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(filtered_scores)-0.5, y1=benchmark, line=dict(color="gray", dash="dash", width=2))
+    fig = go.Figure(go.Bar(x=list(filtered_scores.keys()), y=values, marker_color=colors, text=[f'{v:.2f}' for v in values], textposition='outside', textfont_color='white'))
+    fig.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(filtered_scores)-0.5, y1=benchmark, line=dict(color="white", dash="dash", width=2))
     
-    # MODIFIED PLOT: Updated colors for white background
+    # REVERTED PLOT THEME: Switched back to dark theme for plots
     fig.update_layout(
         title_text="Overall Performance Across Elements",
         paper_bgcolor='rgba(0,0,0,0)', 
-        plot_bgcolor='#f9f9f9', 
-        font_color='black',
-        yaxis=dict(tickfont_color='black'),
-        xaxis=dict(tickfont_color='black')
+        plot_bgcolor='#1a1a1a', 
+        font_color='white',
+        yaxis=dict(tickfont_color='white'),
+        xaxis=dict(tickfont_color='white')
     )
     st.plotly_chart(fig, width='stretch')
 
@@ -279,13 +271,13 @@ def plot_sub_variable_donut_charts(scores_data, category, sub_vars):
     for i, sub_data in enumerate(sub_scores_to_plot):
         with cols[i]:
             score = sub_data["score"]
-            fig = go.Figure(go.Pie(values=[score, 7.0 - score], hole=.7, marker_colors=[get_color_for_score(score), '#E0E0E0'], sort=False, textinfo='none'))
+            fig = go.Figure(go.Pie(values=[score, 7.0 - score], hole=.7, marker_colors=[get_color_for_score(score), '#444444'], sort=False, textinfo='none'))
             
-            # MODIFIED PLOT: Updated font color for white background
+            # REVERTED PLOT THEME: Switched back to dark theme for plots
             fig.update_layout(
                 title_text=sub_data["name"],
-                annotations=[dict(text=f'{score:.2f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='black')],
-                showlegend=False, height=250, paper_bgcolor='rgba(0,0,0,0)', font_color='black'
+                annotations=[dict(text=f'{score:.2f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')],
+                showlegend=False, height=250, paper_bgcolor='rgba(0,0,0,0)', font_color='white'
             )
             st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
 
@@ -386,15 +378,12 @@ def dashboard(navigate_to, user_email, **kwargs):
     col1, col2 = st.columns([2, 1.2])
 
     with col1:
-        st.markdown("<div class='white-container'>", unsafe_allow_html=True)
+        # REVERTED: Removed the white container markdown wrappers
         plot_category_scores(org_data, sub_vars_map.keys(), benchmark=benchmark)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<div class='white-container'>", unsafe_allow_html=True)
+        
         st.subheader("Detailed Sub-Element Analysis")
         category = st.selectbox("Select Element", list(sub_vars_map.keys()), label_visibility="collapsed")
         plot_sub_variable_donut_charts(org_data, category, sub_vars_map[category])
-        st.markdown("</div>", unsafe_allow_html=True)
         
     with col2:
         st.subheader("Score Tiers & Benchmark")
@@ -413,7 +402,6 @@ def dashboard(navigate_to, user_email, **kwargs):
                 if send_email_with_attachment(admin_email, f"{org_name} Performance Report", body): st.success("Email sent!")
         else: st.info("Admin email not found.")
 
-        # RE-ADDED NAVIGATION
         st.subheader("Explore VClarifi Agents")
         nav_cols = st.columns(2)
         with nav_cols[0]:
