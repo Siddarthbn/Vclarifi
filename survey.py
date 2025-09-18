@@ -47,7 +47,7 @@ def survey(navigate_to, user_email, secrets):
 
     # --- Paths & Constants ---
     bg_path = "images/background.jpg"
-    logo_path = "images/vtara.png"
+    logo_path = "images/VTARA.png"
     MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
     TEAM_AVERAGE_DATA_WINDOW_DAYS = 90
 
