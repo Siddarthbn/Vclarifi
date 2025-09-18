@@ -15,9 +15,45 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
+# --- NEW: Imports for AWS Secrets Manager ---
+import boto3
+import json
+import logging
+
 # --- Paths to your images ---
 LOGO_PATH = os.path.join("images", "VTARA.PNG")
 BG_IMAGE_PATH = os.path.join("images", "bg.jpg")
+
+# ==============================================================================
+# --- NEW: AWS SECRETS MANAGER HELPER ---
+# ==============================================================================
+
+@st.cache_data(ttl=600) # Cache secrets for 10 minutes to reduce API calls
+def get_aws_secrets():
+    """
+    Fetches secrets from AWS Secrets Manager.
+
+    This function is designed for secrets stored as key-value pairs, which the AWS API
+    returns as a single JSON string. It includes robust error handling.
+    """
+    secret_name = "production/vclarifi/secrets" # Your secret's unique name/path
+    region_name = "us-east-1"
+
+    # The boto3 session will automatically use credentials from IAM roles or environment variables
+    session = boto3.session.Session()
+    client = session.client(service_name='secretsmanager', region_name=region_name)
+
+    try:
+        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+        secret_string = get_secret_value_response['SecretString']
+        logging.info("Secrets Loaded Successfully from AWS.")
+        return json.loads(secret_string)
+    except Exception as e:
+        # Log the full error for debugging but show a user-friendly message
+        logging.error(f"AWS Secrets Manager Error: {e}")
+        st.error("FATAL: Could not retrieve application secrets from AWS.")
+        st.error("Please contact support and check IAM permissions and secret name.")
+        return None
 
 # -------------------- UI Helpers --------------------
 def encode_image(image_path):
@@ -33,7 +69,7 @@ def encode_image(image_path):
         return ""
 
 def set_background(image_path, default_color_hex="#438454"):
-    # This function remains unchanged as it does not handle secrets.
+    # This function remains unchanged.
     """Sets the overall background as an image or a default color."""
     bg_style = ""
     if image_path and os.path.exists(image_path):
@@ -81,7 +117,6 @@ def set_background(image_path, default_color_hex="#438454"):
         </style>
     """, unsafe_allow_html=True)
 
-
 def display_header_with_logo_and_text(title, logo_path, org_name):
     # This function remains unchanged.
     """Displays a custom header with a title, logo, and organization name."""
@@ -96,10 +131,15 @@ def display_header_with_logo_and_text(title, logo_path, org_name):
     """, unsafe_allow_html=True)
 
 # -------------------- Data Access --------------------
-def get_db_connection(secrets):
-    """Establishes and returns a MySQL database connection using a passed secrets dictionary."""
+def get_db_connection():
+    """Establishes and returns a MySQL database connection using secrets from AWS."""
+    # REFINED: Fetches secrets directly from AWS instead of receiving them as an argument.
+    secrets = get_aws_secrets()
+    if not secrets:
+        st.error("❌ Database connection failed: Could not load secrets.")
+        return None
+
     try:
-        # REFINED: Uses the 'secrets' dictionary argument instead of st.secrets
         db_secrets = secrets['database']
         conn = mysql.connector.connect(
             host=db_secrets['DB_HOST'],
@@ -110,21 +150,20 @@ def get_db_connection(secrets):
         return conn
     except (KeyError, mysql.connector.Error) as err:
         st.error(f"❌ Database connection error: {err}")
-        st.error("Please ensure your secrets dictionary contains the correct database credentials.")
+        st.error("Please ensure your AWS secrets contain the correct database credentials.")
         return None
 
-# The hash_func is necessary for Streamlit to cache the dictionary correctly
-def hash_secrets(secrets):
-    return str(secrets)
+# REMOVED: The hash_secrets function is no longer needed.
 
-@st.cache_data(ttl=600, hash_funcs={dict: hash_secrets})
-def fetch_organization_data(_user_email, secrets):
+# REFINED: The decorator is simplified as the complex dictionary argument is removed.
+@st.cache_data(ttl=600)
+def fetch_organization_data(_user_email):
     """
     Fetches the latest survey data for a given organization based on the user's email.
     Returns aggregated scores and organization details.
     """
-    # REFINED: Passes secrets to the database connection function
-    conn = get_db_connection(secrets)
+    # REFINED: Calls the updated get_db_connection which handles its own secrets.
+    conn = get_db_connection()
     if not conn: return None, None, None
 
     # --- The rest of this function's logic remains exactly the same ---
@@ -169,17 +208,22 @@ def generate_dynamic_insight_text(df_best_performing, df_worst_performing, bench
     pass
 
 # -------------------- Email Functions --------------------
-def send_email_with_attachment(recipient_email, subject, body_text, secrets, pdf_bytes=None, filename="dashboard.pdf"):
-    """Sends an email with an optional PDF attachment using a passed secrets dictionary."""
+def send_email_with_attachment(recipient_email, subject, body_text, pdf_bytes=None, filename="dashboard.pdf"):
+    """Sends an email with an optional PDF attachment using secrets from AWS."""
+    # REFINED: Fetches secrets directly from AWS.
+    secrets = get_aws_secrets()
+    if not secrets:
+        st.error("Failed to send email: Could not load secrets.")
+        return False
+
     try:
-        # REFINED: Uses the 'secrets' dictionary argument instead of st.secrets
         email_secrets = secrets['email']
         sender_email = email_secrets['SENDER_EMAIL']
         sender_password = email_secrets['SENDER_APP_PASSWORD']
         smtp_server = email_secrets['SMTP_SERVER']
         smtp_port = email_secrets['SMTP_PORT']
     except KeyError:
-        st.error("Email configuration is missing from the secrets dictionary.")
+        st.error("Email configuration is missing from AWS secrets.")
         return False
 
     # --- The rest of this function's logic remains exactly the same ---
@@ -214,16 +258,16 @@ def format_results_for_email(org_data_full, sub_variables_conceptual, benchmark_
     pass
 
 # -------------------- Main Dashboard ------------------
-def dashboard(navigate_to, user_email, secrets):
-    """Renders the main dashboard page. Now requires a 'secrets' dictionary."""
+def dashboard(navigate_to, user_email):
+    """Renders the main dashboard page, fetching secrets automatically from AWS."""
 
     set_background(BG_IMAGE_PATH)
 
     org_data_key = f"org_data_{user_email}"
     if org_data_key not in st.session_state:
         with st.spinner("Fetching organization data..."):
-            # REFINED: Passes secrets to the data fetching function
-            st.session_state[org_data_key] = fetch_organization_data(user_email, secrets)
+            # REFINED: Calls data fetching function without the secrets argument.
+            st.session_state[org_data_key] = fetch_organization_data(user_email)
 
     fetched_data_tuple = st.session_state.get(org_data_key)
     if not fetched_data_tuple or fetched_data_tuple[0] is None:
@@ -247,12 +291,12 @@ def dashboard(navigate_to, user_email, secrets):
     
     # ... (Layout columns and plot calls)
 
-    # REFINED: Passes secrets to the email function call
+    # REFINED: Calls the email function without the secrets argument.
     if admin_email:
         if st.button(f"📄 Email Full Text Results to Admin", key="email_text_results", use_container_width=True):
             with st.spinner(f"Sending results to {admin_email}..."):
                 email_body = format_results_for_email(org_data, sub_variables_conceptual, benchmark_value)
-                if send_email_with_attachment(admin_email, "Full Performance Results", email_body, secrets):
+                if send_email_with_attachment(admin_email, "Full Performance Results", email_body):
                     st.success(f"Results successfully emailed to {admin_email}!")
                 else:
                     st.error("Failed to send email.")
@@ -268,24 +312,11 @@ def placeholder_page(title, navigate_to):
 if __name__ == "__main__":
     # This block is for standalone testing.
     # In a real scenario, this file is imported as a module by main.py.
+    # NOTE: For this to run, your environment must be configured with AWS credentials
+    # (e.g., via environment variables or an IAM role).
     st.set_page_config(layout="wide", page_title="VClarifi Dashboard")
 
-    # For standalone testing, we need a mock secrets object.
-    # In production, this comes from main.py.
-    mock_secrets = {
-        "database": {
-            "DB_HOST": "your_host",
-            "DB_DATABASE": "your_db",
-            "DB_USER": "your_user",
-            "DB_PASSWORD": "your_password"
-        },
-        "email": {
-            "SENDER_EMAIL": "your_email@example.com",
-            "SENDER_APP_PASSWORD": "your_app_password",
-            "SMTP_SERVER": "smtp.example.com",
-            "SMTP_PORT": 587
-        }
-    }
+    # REFINED: Removed mock_secrets as they are now fetched from AWS.
 
     if 'user_email' not in st.session_state:
         st.session_state['user_email'] = 'admin_alpha@example.com' # Test user
@@ -293,5 +324,5 @@ if __name__ == "__main__":
     def nav_to(page_name):
         st.info(f"Navigation requested to: {page_name}")
 
-    # Call the dashboard with the mock secrets for testing
-    dashboard(nav_to, st.session_state.user_email, mock_secrets)
+    # REFINED: Call the dashboard without the secrets argument.
+    dashboard(nav_to, st.session_state.user_email)
