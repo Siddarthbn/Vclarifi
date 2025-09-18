@@ -15,7 +15,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
-# --- NEW: Imports for AWS Secrets Manager ---
+# --- Imports for AWS Secrets Manager ---
 import boto3
 import json
 import logging
@@ -26,7 +26,7 @@ BG_IMAGE_PATH = os.path.join("images", "bg.jpg")
 
 
 # ==============================================================================
-# --- NEW: AWS SECRETS MANAGER HELPER ---
+# --- AWS SECRETS MANAGER HELPER ---
 # ==============================================================================
 
 @st.cache_data(ttl=600)  # Cache secrets for 10 minutes to reduce API calls
@@ -143,7 +143,6 @@ def display_header_with_logo_and_text(title, logo_path, org_name):
 # -------------------- Data Access --------------------
 def get_db_connection():
     """Establishes database connection using secrets from AWS Secrets Manager."""
-    # REFINED: Uses AWS Secrets Manager instead of st.secrets
     secrets = get_aws_secrets()
     if not secrets:
         st.error("❌ Database connection failed: Could not load secrets from AWS.")
@@ -241,7 +240,7 @@ def plot_category_scores(scores_data, categories, benchmark=5.5):
     fig = go.Figure(go.Bar(x=list(filtered_scores.keys()), y=values, marker_color=colors, text=[f'{v:.2f}' for v in values], textposition='outside', textfont_color='white'))
     fig.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(filtered_scores)-0.5, y1=benchmark, line=dict(color="white", dash="dash", width=2))
     fig.update_layout(title_text="Overall Performance Across Elements", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#1a1a1a', font_color='white')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 def plot_sub_variable_donut_charts(scores_data, category, sub_vars):
     """Generates donut charts for sub-variables."""
@@ -258,7 +257,7 @@ def plot_sub_variable_donut_charts(scores_data, category, sub_vars):
             fig = go.Figure(go.Pie(values=[score, 7.0 - score], hole=.7, marker_colors=[get_color_for_score(score), '#444'], sort=False, textinfo='none'))
             fig.update_layout(title_text=sub_data["name"], annotations=[dict(text=f'{score:.2f}', x=0.5, y=0.5, font_size=20, showarrow=False)],
                               showlegend=False, height=250, paper_bgcolor='rgba(0,0,0,0)', font_color='white')
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
 
 def display_sub_category_performance_table(org_data, sub_vars_map, perf_type):
     """Displays a styled table of best/worst performing sub-categories."""
@@ -291,7 +290,6 @@ def display_insight_text(df_best, df_worst, benchmark):
 # -------------------- Email Functions --------------------
 def send_email_with_attachment(recipient_email, subject, body_text):
     """Sends an email using secrets from AWS Secrets Manager."""
-    # REFINED: Uses AWS Secrets Manager instead of st.secrets
     secrets = get_aws_secrets()
     if not secrets:
         st.error("Email failed: Could not load secrets from AWS.")
@@ -369,11 +367,11 @@ def dashboard(navigate_to, user_email):
         st.subheader("Performance Highlights")
         perf_type = st.selectbox("View", ("Best", "Worst"), key="perf_table_select")
         styled_df, raw_df = display_sub_category_performance_table(org_data, sub_vars_map, perf_type)
-        if styled_df is not None: st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        if styled_df is not None: st.dataframe(styled_df, width='stretch', hide_index=True)
 
         st.subheader("Actions")
         if admin_email:
-            if st.button("📄 Email Full Results to Admin", use_container_width=True):
+            if st.button("📄 Email Full Results to Admin", width='stretch'):
                 body = format_results_for_email(org_data, sub_vars_map, benchmark)
                 if send_email_with_attachment(admin_email, f"{org_name} Performance Report", body): st.success("Email sent!")
         else: st.info("Admin email not found.")
