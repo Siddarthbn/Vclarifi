@@ -1,4 +1,4 @@
-import streamlit as st
+reimport streamlit as st
 import base64
 import mysql.connector
 from mysql.connector import Error
@@ -74,7 +74,7 @@ except (KeyError, TypeError, ValueError) as e:
 
 
 # ---------- MAIN SURVEY FUNCTION ----------
-def survey(navigate_to, user_email):
+def survey(navigate_to, user_email,secrets):
     """
     Streamlit function to administer a multi-category survey, save responses,
     track progress, and manage admin features.
@@ -87,7 +87,7 @@ def survey(navigate_to, user_email):
     # --- Paths ---
     # TODO: Update these paths to be correct for your environment
     bg_path = "images/background.jpg"
-    logo_path = "images/vtara.png"
+    logo_path = "images/VTARA.png"
 
     # --- Constants ---
     MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
