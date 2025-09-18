@@ -21,7 +21,7 @@ import json
 import logging
 
 # --- Use os.path.join for robust path handling ---
-LOGO_PATH = os.path.join("images", "vtara.png")
+LOGO_PATH = os.path.join("images", "VTARA.png")
 BG_IMAGE_PATH = os.path.join("images", "bg.jpg")
 
 
