@@ -288,7 +288,6 @@ def fetch_organization_data(user_email):
             st.warning(f"No users found for organization '{org_name}'.")
             return None, org_name
 
-        # REFINED: Query the Averages table directly
         avg_cols = [
             "Leadership_avg", "Influencers_avg", "Bonding_avg",
             "CulturePulse_avg", "Sustainability_avg", "Empower_avg"
@@ -299,7 +298,7 @@ def fetch_organization_data(user_email):
             SELECT {', '.join(avg_cols)}
             FROM (
                 SELECT *,
-                       ROW_NUMBER() OVER(PARTITION BY Email_ID ORDER BY submission_id DESC) as rn
+                       ROW_NUMBER() OVER(PARTITION BY Email_ID ORDER BY id DESC) as rn
                 FROM Averages
                 WHERE Email_ID IN ({placeholders})
             ) ranked_data
@@ -313,6 +312,17 @@ def fetch_organization_data(user_email):
             return None, org_name
 
         df_combined = pd.DataFrame(all_latest_user_data)
+
+        # REFINED: Added robust data validation and clearer warnings
+        for col in avg_cols:
+            if col in df_combined.columns:
+                df_combined[col] = pd.to_numeric(df_combined[col], errors='coerce')
+        
+        # Check if all data is null after conversion, which causes the error
+        if df_combined[avg_cols].isnull().all().all():
+            st.warning(f"Found survey submissions for '{org_name}', but all average score columns are empty or contain non-numeric data in the 'Averages' table. Please check the data integrity.")
+            return None, org_name
+            
         org_averages = df_combined.mean(numeric_only=True).to_dict()
         org_data = {'Organization_Name': org_name, **org_averages}
         return org_data, org_name
