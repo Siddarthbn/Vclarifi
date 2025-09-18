@@ -14,7 +14,7 @@ import logging
 
 # --- Configuration ---
 BG_IMAGE_PATH = "images/background.jpg"
-LOGO_IMAGE_PATH = "images/vtara.png"
+LOGO_IMAGE_PATH = "images/VTARA.png"
 GEMINI_MODEL = "models/gemini-1.5-flash"
 
 # --- Survey Questions Dictionary ---
