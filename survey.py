@@ -17,28 +17,23 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%
 # ---------- MAIN SURVEY FUNCTION ----------
 def survey(navigate_to, user_email, secrets):
     """
-    Streamlit function to administer a survey. It now receives secrets as an argument.
+    Streamlit function to administer a survey. It receives secrets as an argument.
     """
     # --- Process Passed-in Secrets ---
     try:
         if secrets:
-            # Database Configuration
             DB_HOST = secrets['DB_HOST']
             DB_USER = secrets['DB_USER']
             DB_PASSWORD = secrets['DB_PASSWORD']
-            DB_DATABASE = "Vclarifi"  # Database name as specified
-
-            # Email Configuration
+            DB_DATABASE = "Vclarifi"
             SENDER_EMAIL = secrets['SENDER_EMAIL']
             SENDER_APP_PASSWORD = secrets['SENDER_APP_PASSWORD']
             SMTP_SERVER = secrets['SMTP_SERVER']
             SMTP_PORT = secrets['SMTP_PORT']
-
             CONFIG_LOADED_SUCCESSFULLY = True
             logging.info("Configuration secrets successfully processed.")
         else:
             raise ValueError("Received an empty secrets object.")
-
     except (KeyError, ValueError) as e:
         logging.critical(f"FATAL: Could not read secrets passed into function. Check keys. Error: {e}")
         DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
@@ -50,11 +45,9 @@ def survey(navigate_to, user_email, secrets):
         st.error("Application is critically misconfigured. Cannot initialize survey. Please contact an administrator.")
         return
 
-    # --- Paths ---
+    # --- Paths & Constants ---
     bg_path = "images/background.jpg"
-    logo_path = "images/VTARA.png"
-
-    # --- Constants ---
+    logo_path = "images/vtara.png"
     MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
     TEAM_AVERAGE_DATA_WINDOW_DAYS = 90
 
@@ -179,10 +172,8 @@ def survey(navigate_to, user_email, secrets):
     }
     all_category_keys = list(survey_questions.keys())
 
-
     # --- Database Interaction Functions ---
     def get_db_connection():
-        """Establishes and returns a database connection using global config variables."""
         if not DB_HOST:
             logging.error("DB connection attempt failed because secrets were not loaded.")
             st.error("Database is not configured. Cannot proceed.")
@@ -195,7 +186,6 @@ def survey(navigate_to, user_email, secrets):
             return None
 
     def close_db_connection(conn, cursor=None):
-        """Safely closes a database cursor and connection."""
         if cursor:
             try: cursor.close()
             except Error: pass
@@ -250,49 +240,51 @@ def survey(navigate_to, user_email, secrets):
         except Error as e: st.error(f"Error fetching admin organisation: {e}"); return None
         finally: close_db_connection(conn)
 
+    # REFINED: This function contains the new, robust logic for determining user state.
     def get_or_create_active_submission(user_email_param):
         """
-        Determines the user's survey state with refined logic for completed surveys.
-        - If 'In Progress', continues session.
-        - If 'Completed' recently, shows a different view for Admins vs. Members.
-        - If 'Completed' long ago, or never started, creates a new session.
+        Determines the user's survey state with prioritized logic.
+        1. Checks for an 'In Progress' survey to resume.
+        2. If none, checks for a recent 'Completed' survey.
+        3. If none of the above, creates a new survey.
         """
         conn = get_db_connection()
         if not conn: return None
-
         try:
             with conn.cursor(dictionary=True, buffered=True) as cursor:
-                query_latest = "SELECT submission_id, completion_time, status FROM Submissions WHERE Email_ID = %s ORDER BY start_time DESC LIMIT 1"
-                cursor.execute(query_latest, (user_email_param,))
-                latest_submission = cursor.fetchone()
+                # Priority 1: Find an 'In Progress' survey to resume.
+                query_in_progress = "SELECT submission_id FROM Submissions WHERE Email_ID = %s AND status = 'In Progress' ORDER BY start_time DESC LIMIT 1"
+                cursor.execute(query_in_progress, (user_email_param,))
+                in_progress_submission = cursor.fetchone()
 
-                if latest_submission:
-                    # Case 1: Survey is still in progress
-                    if latest_submission['status'] == 'In Progress':
-                        return {'submission_id': latest_submission['submission_id'], 'action': 'CONTINUE_IN_PROGRESS', 'message': 'Resuming your previous survey session.'}
+                if in_progress_submission:
+                    return {'submission_id': in_progress_submission['submission_id'], 'action': 'CONTINUE_IN_PROGRESS', 'message': 'Resuming your previous survey session.'}
+
+                # Priority 2: If no 'In Progress', find the most recent 'Completed' survey.
+                query_latest_completed = "SELECT submission_id, completion_time FROM Submissions WHERE Email_ID = %s AND status = 'Completed' ORDER BY completion_time DESC LIMIT 1"
+                cursor.execute(query_latest_completed, (user_email_param,))
+                latest_completed = cursor.fetchone()
+
+                if latest_completed:
+                    three_months_ago = datetime.now() - timedelta(days=TEAM_AVERAGE_DATA_WINDOW_DAYS)
+                    is_recent = latest_completed['completion_time'] and latest_completed['completion_time'] > three_months_ago
                     
-                    # Case 2: Survey was completed
-                    elif latest_submission['status'] == 'Completed':
-                        three_months_ago = datetime.now() - timedelta(days=TEAM_AVERAGE_DATA_WINDOW_DAYS)
-                        is_recent = latest_submission['completion_time'] and latest_submission['completion_time'] > three_months_ago
-                        
-                        if is_recent:
-                            # Sub-case 2a: Completed recently - check if user is an Admin
-                            if is_admin_of_an_organisation(user_email_param):
-                                return {'submission_id': latest_submission['submission_id'], 'action': 'SHOW_ADMIN_HUB', 'message': 'Welcome back! Your survey is complete. You can now manage your team.'}
-                            else:
-                                # Sub-case 2b: Completed recently - they are a regular team member
-                                return {'submission_id': latest_submission['submission_id'], 'action': 'SHOW_MEMBER_THANKS', 'message': 'Thank you for completing the survey! Your responses have been recorded.'}
-                
-                # Case 3: No submission found, or latest one is old. Create a new one.
+                    if is_recent:
+                        if is_admin_of_an_organisation(user_email_param):
+                            return {'submission_id': latest_completed['submission_id'], 'action': 'SHOW_ADMIN_HUB', 'message': 'Welcome back! Your recent survey is complete.'}
+                        else:
+                            return {'submission_id': latest_completed['submission_id'], 'action': 'SHOW_MEMBER_THANKS', 'message': 'Thank you for completing the survey! Your responses have been recorded.'}
+
+                # Priority 3: If no recent completion and no in-progress, create a new session.
                 insert_query = "INSERT INTO Submissions (Email_ID, start_time, status) VALUES (%s, %s, %s)"
                 cursor.execute(insert_query, (user_email_param, datetime.now(), 'In Progress'))
                 conn.commit()
                 new_submission_id = cursor.lastrowid
-                return {'submission_id': new_submission_id, 'action': 'START_NEW', 'message': 'Starting a new survey session.'}
+                return {'submission_id': new_submission_id, 'action': 'START_NEW', 'message': 'Welcome! Please begin your survey.'}
 
         except Error as e:
             st.error(f"MySQL Error managing submission: {e}")
+            logging.error(f"MySQL Error managing submission: {e}")
             return None
         finally:
             close_db_connection(conn)
@@ -558,8 +550,7 @@ def survey(navigate_to, user_email, secrets):
     if 'submission_status_checked' not in st.session_state or st.session_state.get('current_user_for_status_check') != user_email:
         submission_info = get_or_create_active_submission(user_email)
         if not submission_info: st.error("Could not initialize survey session."); return
-        st.session_state.submission_info = submission_info
-        st.session_state.current_submission_id = submission_info.get('submission_id')
+        st.session_state.submission_id = submission_info.get('submission_id')
         st.session_state.submission_action = submission_info['action']
         st.session_state.submission_message = submission_info['message']
         st.session_state.submission_status_checked = True
@@ -567,7 +558,7 @@ def survey(navigate_to, user_email, secrets):
         st.rerun()
     
     submission_action = st.session_state.get('submission_action', '')
-    current_submission_id = st.session_state.get('current_submission_id')
+    current_submission_id = st.session_state.get('submission_id')
     
     if st.session_state.get('submission_message'):
         st.info(st.session_state.submission_message)
@@ -614,7 +605,7 @@ def survey(navigate_to, user_email, secrets):
                         with st.spinner(f"Calculating averages..."): handle_calculate_team_averages(user_email, admin_org_name)
                 else: st.info(f"At least {MIN_RESPONDENTS_FOR_TEAM_AVERAGE} valid completion(s) required. Currently: {valid_for_calc_count}.")
                 current_reporting_period_display = datetime.now().strftime('%Y-%m')
-                if st.session_state.get('latest_team_averages_display') is None:
+                if 'latest_team_averages_display' not in st.session_state:
                     conn_display = get_db_connection()
                     if conn_display:
                         st.session_state.latest_team_averages_display = get_latest_team_overall_averages(admin_org_name, current_reporting_period_display, conn_display)
