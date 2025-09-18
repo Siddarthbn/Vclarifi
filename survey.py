@@ -15,30 +15,49 @@ import json
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
 # ---------- AWS SECRETS MANAGER INTEGRATION ----------
-@st.cache_data(ttl=600)  # Cache secrets for 10 minutes to reduce API calls
-def get_aws_secrets():
+@st.cache_data(ttl=600)  # Cache for 10 minutes
+def get_aws_secrets(secret_name: str, region_name: str) -> dict | None:
     """
-    Fetches secrets from AWS Secrets Manager.
+    Fetches and parses a JSON secret from AWS Secrets Manager.
 
-    This function is designed for secrets stored as key-value pairs, which the AWS API
-    returns as a single JSON string. It includes robust error handling.
+    Args:
+        secret_name (str): The name or ARN of the secret.
+        region_name (str): The AWS region where the secret is stored.
+
+    Returns:
+        dict | None: A dictionary containing the secret key-value pairs,
+                     or None if an error occurs.
     """
-    secret_name = "production/vclarifi/secrets"  # Your secret's unique name/path
-    region_name = "us-east-1"
-
     session = boto3.session.Session()
     client = session.client(service_name='secretsmanager', region_name=region_name)
 
     try:
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
         secret_string = get_secret_value_response['SecretString']
-        logging.info("Secrets Loaded Successfully from AWS.")
+        logging.info("Secrets loaded successfully from AWS Secrets Manager.")
         return json.loads(secret_string)
+
+    except NoCredentialsError as e:
+        logging.critical(f"AWS credentials not found. Configure IAM role or credentials. Error: {e}")
+        st.error("FATAL: AWS credentials not configured.")
+        return None
+
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code")
+        if error_code == 'ResourceNotFoundException':
+            logging.error(f"The requested secret '{secret_name}' was not found.")
+            st.error(f"FATAL: The secret named '{secret_name}' could not be found.")
+        elif error_code == 'AccessDeniedException':
+            logging.error(f"Access denied for secret '{secret_name}'. Check IAM permissions. Error: {e}")
+            st.error("FATAL: Access denied. Check application's IAM permissions for Secrets Manager.")
+        else:
+            logging.error(f"An unexpected AWS ClientError occurred: {e}")
+            st.error("FATAL: An unexpected error occurred while fetching secrets from AWS.")
+        return None
+        
     except Exception as e:
-        # Log the full error for debugging but show a user-friendly message
-        logging.error(f"AWS Secrets Manager Error: {e}")
-        st.error("FATAL: Could not retrieve application secrets from AWS.")
-        st.error("Please contact support and check IAM permissions and secret name.")
+        logging.error(f"An unknown error occurred while fetching secrets: {e}")
+        st.error("FATAL: An unknown error occurred. Please contact support.")
         return None
 # ---------- GLOBAL CONFIGURATION (ROBUST STARTUP) ----------
 # This block is updated to work with a FLAT key-value secret structure.
