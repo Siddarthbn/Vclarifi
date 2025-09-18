@@ -1,4 +1,4 @@
-reimport streamlit as st
+import streamlit as st
 import base64
 import mysql.connector
 from mysql.connector import Error
