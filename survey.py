@@ -10,7 +10,7 @@ import numpy as np
 import logging
 import boto3
 import json
-from botore.exceptions import ClientError, NoCredentialsError
+from botocore.exceptions import ClientError, NoCredentialsError
 
 # ---------- LOGGING CONFIGURATION ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
@@ -522,7 +522,7 @@ def survey(navigate_to, user_email):
     def create_team_overall_averages_table(conn):
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""CREATE TABLE IF NOT EXISTS Team_Overall_Averages (id INT AUTO_INCREMENT PRIMARY KEY, organisation_name VARCHAR(255) NOT NULL, admin_email VARCHAR(255), reporting_period_identifier VARCHAR(255) NOT NULL, Leadership_team_avg DECIMAL(3,2), Empower_team_avg DECIMAL(3,2), Sustainability_team_avg DECIMAL(3,2), CulturePulse_team_avg DECIMAL(3,2), Bonding_team_avg DECIMAL(3,2), Influencers_team_avg DECIMAL(3,2), number_of_respondents INT, calculation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY unique_org_period (organisation_name, reporting_period_identifier))""")
+                cursor.execute("""CREATE TABLE IF NOT EXISTS Team_Overall_Averages (id INT AUTO_INCREMENT PRIMARY KEY, organisation_name VARCHAR(255) NOT NULL, admin_email VARCHAR(255), reporting_period_identifier VARCHAR(255) NOT NULL, Leadership_team_avg DECIMAL(5,2), Empower_team_avg DECIMAL(5,2), Sustainability_team_avg DECIMAL(5,2), CulturePulse_team_avg DECIMAL(5,2), Bonding_team_avg DECIMAL(5,2), Influencers_team_avg DECIMAL(5,2), number_of_respondents INT, calculation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY unique_org_period (organisation_name, reporting_period_identifier))""")
                 conn.commit()
         except Error as e: st.error(f"Error creating Team_Overall_Averages table: {e}")
 
