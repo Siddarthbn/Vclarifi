@@ -21,7 +21,7 @@ import json
 import logging
 
 # --- Use os.path.join for robust path handling ---
-LOGO_PATH = os.path.join("images", "VTARA.png")
+LOGO_PATH = os.path.join("images", "vtara.png")
 BG_IMAGE_PATH = os.path.join("images", "bg.jpg")
 
 
@@ -121,6 +121,17 @@ def set_background(image_path, default_color_hex="#438454"):
         }}
         .insight-section-container p {{ text-align: justify; }}
         .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
+        
+        /* NEW CSS for white containers */
+        .white-container {{
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }}
+        .white-container h2, .white-container h3, .white-container .st-emotion-cache-1r6dm1r p {{
+            color: black !important;
+        }}
         </style>
     """, unsafe_allow_html=True)
 
@@ -143,9 +154,7 @@ def get_db_connection():
         st.error("❌ Database connection failed: Could not load secrets from AWS.")
         return None
     
-    # REFINED: Adapted for a flat JSON structure from AWS Secrets Manager.
     try:
-        # Manually map keys from the flat secret to what mysql.connector expects.
         db_params = {
             'host': secrets['DB_HOST'],
             'database': secrets['DB_DATABASE'],
@@ -244,9 +253,18 @@ def plot_category_scores(scores_data, categories, benchmark=5.5):
     
     values = list(filtered_scores.values())
     colors = [get_color_for_score(v) for v in values]
-    fig = go.Figure(go.Bar(x=list(filtered_scores.keys()), y=values, marker_color=colors, text=[f'{v:.2f}' for v in values], textposition='outside', textfont_color='white'))
-    fig.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(filtered_scores)-0.5, y1=benchmark, line=dict(color="white", dash="dash", width=2))
-    fig.update_layout(title_text="Overall Performance Across Elements", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#1a1a1a', font_color='white')
+    fig = go.Figure(go.Bar(x=list(filtered_scores.keys()), y=values, marker_color=colors, text=[f'{v:.2f}' for v in values], textposition='outside', textfont_color='black'))
+    fig.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(filtered_scores)-0.5, y1=benchmark, line=dict(color="gray", dash="dash", width=2))
+    
+    # MODIFIED PLOT: Updated colors for white background
+    fig.update_layout(
+        title_text="Overall Performance Across Elements",
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='#f9f9f9', 
+        font_color='black',
+        yaxis=dict(tickfont_color='black'),
+        xaxis=dict(tickfont_color='black')
+    )
     st.plotly_chart(fig, width='stretch')
 
 def plot_sub_variable_donut_charts(scores_data, category, sub_vars):
@@ -261,9 +279,14 @@ def plot_sub_variable_donut_charts(scores_data, category, sub_vars):
     for i, sub_data in enumerate(sub_scores_to_plot):
         with cols[i]:
             score = sub_data["score"]
-            fig = go.Figure(go.Pie(values=[score, 7.0 - score], hole=.7, marker_colors=[get_color_for_score(score), '#444'], sort=False, textinfo='none'))
-            fig.update_layout(title_text=sub_data["name"], annotations=[dict(text=f'{score:.2f}', x=0.5, y=0.5, font_size=20, showarrow=False)],
-                              showlegend=False, height=250, paper_bgcolor='rgba(0,0,0,0)', font_color='white')
+            fig = go.Figure(go.Pie(values=[score, 7.0 - score], hole=.7, marker_colors=[get_color_for_score(score), '#E0E0E0'], sort=False, textinfo='none'))
+            
+            # MODIFIED PLOT: Updated font color for white background
+            fig.update_layout(
+                title_text=sub_data["name"],
+                annotations=[dict(text=f'{score:.2f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='black')],
+                showlegend=False, height=250, paper_bgcolor='rgba(0,0,0,0)', font_color='black'
+            )
             st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
 
 def display_sub_category_performance_table(org_data, sub_vars_map, perf_type):
@@ -301,8 +324,6 @@ def send_email_with_attachment(recipient_email, subject, body_text):
     if not secrets:
         st.error("Email failed: Could not load secrets from AWS.")
         return False
-
-    # REFINED: Adapted for a flat JSON structure.
     try:
         sender_email = secrets["SENDER_EMAIL"]
         sender_password = secrets["SENDER_APP_PASSWORD"]
@@ -365,10 +386,15 @@ def dashboard(navigate_to, user_email, **kwargs):
     col1, col2 = st.columns([2, 1.2])
 
     with col1:
+        st.markdown("<div class='white-container'>", unsafe_allow_html=True)
         plot_category_scores(org_data, sub_vars_map.keys(), benchmark=benchmark)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='white-container'>", unsafe_allow_html=True)
         st.subheader("Detailed Sub-Element Analysis")
         category = st.selectbox("Select Element", list(sub_vars_map.keys()), label_visibility="collapsed")
         plot_sub_variable_donut_charts(org_data, category, sub_vars_map[category])
+        st.markdown("</div>", unsafe_allow_html=True)
         
     with col2:
         st.subheader("Score Tiers & Benchmark")
@@ -387,6 +413,17 @@ def dashboard(navigate_to, user_email, **kwargs):
                 if send_email_with_attachment(admin_email, f"{org_name} Performance Report", body): st.success("Email sent!")
         else: st.info("Admin email not found.")
 
+        # RE-ADDED NAVIGATION
+        st.subheader("Explore VClarifi Agents")
+        nav_cols = st.columns(2)
+        with nav_cols[0]:
+            if st.button("➡ Recommendations", width='stretch'): navigate_to("Recommendations")
+            if st.button("➡ DocBot", width='stretch'): navigate_to("docbot")
+        with nav_cols[1]:
+            if st.button("➡ VClarifi Agent", width='stretch'): navigate_to("VClarifi_Agent")
+            if st.button("➡ Text-to-Video", width='stretch'): navigate_to("text_2_video_agent")
+
+
     _, df_best = display_sub_category_performance_table(org_data, sub_vars_map, "Best")
     _, df_worst = display_sub_category_performance_table(org_data, sub_vars_map, "Worst")
     display_insight_text(df_best, df_worst, benchmark)
@@ -399,13 +436,18 @@ def placeholder_page(title, navigate_to, **kwargs):
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide", page_title="VClarifi Dashboard")
-    # NOTE: To run this standalone, your environment must be configured with AWS credentials.
     if 'page' not in st.session_state: st.session_state.page = 'Dashboard'
     if 'user_email' not in st.session_state: st.session_state.user_email = 'admin_alpha@example.com'
 
     def nav_to(page_name): st.session_state.page = page_name; st.rerun()
     
-    page_map = {"Dashboard": lambda: dashboard(navigate_to=nav_to, user_email=st.session_state.user_email)}
+    page_map = {
+        "Dashboard": lambda: dashboard(navigate_to=nav_to, user_email=st.session_state.user_email),
+        "Recommendations": lambda: placeholder_page("Recommendations", nav_to),
+        "VClarifi_Agent": lambda: placeholder_page("VClarifi Agent", nav_to),
+        "docbot": lambda: placeholder_page("DocBot", nav_to),
+        "text_2_video_agent": lambda: placeholder_page("Text-to-Video", nav_to),
+    }
     
     page_func = page_map.get(st.session_state.page)
     if page_func:
