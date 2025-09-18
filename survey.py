@@ -10,6 +10,7 @@ import numpy as np
 import logging
 import boto3
 import json
+from botore.exceptions import ClientError, NoCredentialsError
 
 # ---------- LOGGING CONFIGURATION ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
@@ -59,45 +60,40 @@ def get_aws_secrets(secret_name: str, region_name: str) -> dict | None:
         logging.error(f"An unknown error occurred while fetching secrets: {e}")
         st.error("FATAL: An unknown error occurred. Please contact support.")
         return None
+
 # ---------- GLOBAL CONFIGURATION (ROBUST STARTUP) ----------
-# This block is updated to work with a FLAT key-value secret structure.
 try:
     SECRET_NAME = "production/vclarifi/secrets"
     REGION_NAME = "us-east-1"
-    
     secrets = get_aws_secrets(secret_name=SECRET_NAME, region_name=REGION_NAME)
     
     if secrets:
-        # --- Direct assignment for a flat structure ---
         # Database Configuration
         DB_HOST = secrets['DB_HOST']
-        DB_DATABASE = secrets['DB_DATABASE']
         DB_USER = secrets['DB_USER']
         DB_PASSWORD = secrets['DB_PASSWORD']
+        DB_DATABASE = "Vclarifi"  # Database name as specified
 
         # Email Configuration
         SENDER_EMAIL = secrets['SENDER_EMAIL']
         SENDER_APP_PASSWORD = secrets['SENDER_APP_PASSWORD']
         SMTP_SERVER = secrets['SMTP_SERVER']
         SMTP_PORT = secrets['SMTP_PORT']
-        # --- End of direct assignment ---
 
         CONFIG_LOADED_SUCCESSFULLY = True
         logging.info("Configuration secrets loaded successfully from AWS Secrets Manager.")
     else:
         raise ValueError("Failed to retrieve secrets from AWS.")
 
-except (KeyError, TypeError, ValueError) as e:
-    # KeyError will now be more specific, e.g., "'DB_HOST' not found"
-    logging.critical(f"FATAL: Could not read secrets. Check if the key '{e}' exists in your AWS secret. Error: {e}")
-    
-    # Set config variables to None so the app can still load without a NameError.
+except (KeyError, ValueError) as e:
+    logging.critical(f"FATAL: Could not read secrets. Check AWS secret structure and keys. Error: {e}")
     DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
     SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
     CONFIG_LOADED_SUCCESSFULLY = False
 
+
 # ---------- MAIN SURVEY FUNCTION ----------
-def survey(navigate_to, user_email,secrets):
+def survey(navigate_to, user_email):
     """
     Streamlit function to administer a multi-category survey, save responses,
     track progress, and manage admin features.
@@ -108,13 +104,12 @@ def survey(navigate_to, user_email,secrets):
         return
 
     # --- Paths ---
-    # TODO: Update these paths to be correct for your environment
     bg_path = "images/background.jpg"
-    logo_path = "images/VTARA.png"
+    logo_path = "images/vtara.png"
 
     # --- Constants ---
     MIN_RESPONDENTS_FOR_TEAM_AVERAGE = 1
-    TEAM_AVERAGE_DATA_WINDOW_DAYS = 90 # Defines what counts as a "recent" survey
+    TEAM_AVERAGE_DATA_WINDOW_DAYS = 90
 
     # --- UI Helper Functions ---
     def set_background(image_path):
@@ -266,7 +261,8 @@ def survey(navigate_to, user_email,secrets):
         if not conn: return None
         try:
             with conn.cursor(dictionary=True) as cursor:
-                cursor.execute("SELECT first_name, last_name FROM user_registration WHERE Email_ID = %s", (user_email_param,))
+                # REFINED: Uses 'Email_Id' to match the user_registration schema
+                cursor.execute("SELECT first_name, last_name FROM user_registration WHERE Email_Id = %s", (user_email_param,))
                 return cursor.fetchone()
         except Error as e: st.error(f"Error fetching user details for {user_email_param}: {e}"); return None
         finally: close_db_connection(conn)
@@ -276,7 +272,8 @@ def survey(navigate_to, user_email,secrets):
         if not conn: return None
         try:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT roles FROM user_registration WHERE Email_ID = %s LIMIT 1", (user_email_param,))
+                # REFINED: Uses 'Email_Id' to match the user_registration schema
+                cursor.execute("SELECT roles FROM user_registration WHERE Email_Id = %s LIMIT 1", (user_email_param,))
                 result = cursor.fetchone()
                 return result[0] if result else None
         except Error as e: st.error(f"MySQL Error fetching user role: {e}"); return None
@@ -306,7 +303,6 @@ def survey(navigate_to, user_email,secrets):
     def get_team_info_for_member(member_email, conn_param):
         """
         Finds a team member's admin and counts the total members on that team.
-        Returns: tuple: (admin_email, total_team_members) or (None, 0) if not found.
         """
         try:
             with conn_param.cursor(dictionary=True, buffered=True) as cursor:
@@ -325,7 +321,7 @@ def survey(navigate_to, user_email,secrets):
 
     def get_or_create_active_submission(user_email_param):
         """
-        Determines the user's survey state. Activates dashboard only when the user's entire team is complete.
+        Determines the user's survey state.
         """
         conn = get_db_connection();
         if not conn: return None
@@ -425,8 +421,10 @@ def survey(navigate_to, user_email,secrets):
         try:
             with conn.cursor() as cursor:
                 col_name = f"`{category_to_mark_completed}`"
+                # REFINED: Now uses integer 1 to match TINYINT(1) schema
                 query = f"INSERT INTO Category_Completed (Email_ID, submission_id, {col_name}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE {col_name} = VALUES({col_name})"
-                cursor.execute(query, (current_user_email, submission_id_param, 'Completed')); conn.commit()
+                cursor.execute(query, (current_user_email, submission_id_param, 1))
+                conn.commit()
         except Error as e: st.error(f"MySQL Error updating category completion for {category_to_mark_completed}: {e}"); conn.rollback()
         finally: close_db_connection(conn)
 
@@ -442,7 +440,9 @@ def survey(navigate_to, user_email,secrets):
                 completion_data_row = cursor.fetchone()
                 if completion_data_row:
                     for cat_k_iter in question_definitions_map.keys():
-                        if completion_data_row.get(cat_k_iter) == 'Completed': loaded_saved_categories.add(cat_k_iter)
+                        # REFINED: Checks for integer 1 instead of string 'Completed'
+                        if completion_data_row.get(cat_k_iter) == 1:
+                            loaded_saved_categories.add(cat_k_iter)
                 for cat_k_iter, q_defs_iter in question_definitions_map.items():
                     try:
                         cursor.execute(f"SELECT * FROM `{cat_k_iter}` WHERE Email_ID = %s AND submission_id = %s", (current_user_email, submission_id_param))
@@ -484,7 +484,8 @@ def survey(navigate_to, user_email,secrets):
                 num_categories_done_in_record = 0
                 all_categories_marked_in_record = False
                 if cat_completed_row:
-                    categories_done_list = [cat_col for cat_col in all_category_keys if cat_completed_row.get(cat_col) == 'Completed']
+                    # REFINED: Checks for integer 1 instead of string 'Completed'
+                    categories_done_list = [cat_col for cat_col in all_category_keys if cat_completed_row.get(cat_col) == 1]
                     num_categories_done_in_record = len(categories_done_list)
                     if num_categories_done_in_record == len(all_category_keys): all_categories_marked_in_record = True
                 is_valid_for_calc = (submission_status_overall == 'Completed' and all_categories_marked_in_record and submission_completion_time and submission_completion_time > three_months_ago)
@@ -504,7 +505,7 @@ def survey(navigate_to, user_email,secrets):
         valid_for_calc_count = 0
         try:
             with conn.cursor(dictionary=True) as cursor:
-                query_team = "SELECT tm.team_member_email, ur.first_name, ur.last_name FROM admin_team_members tm LEFT JOIN user_registration ur ON tm.team_member_email = ur.Email_ID WHERE tm.admin_email = %s"
+                query_team = "SELECT tm.team_member_email, ur.first_name, ur.last_name FROM admin_team_members tm LEFT JOIN user_registration ur ON tm.team_member_email = ur.Email_Id WHERE tm.admin_email = %s"
                 cursor.execute(query_team, (admin_email_param,))
                 members = cursor.fetchall()
             if not members: return team_data, 0
@@ -537,7 +538,7 @@ def survey(navigate_to, user_email,secrets):
                 cursor.execute("SELECT * FROM Category_Completed WHERE submission_id = %s", (sub_id,))
                 cat_completion_row = cursor.fetchone()
                 if not cat_completion_row: return None
-                completed_count = sum(1 for cat_key in all_category_keys_list if cat_completion_row.get(cat_key) == 'Completed')
+                completed_count = sum(1 for cat_key in all_category_keys_list if cat_completion_row.get(cat_key) == 1)
                 return sub_id if completed_count == len(all_category_keys_list) else None
         except Error as e: logging.error(f"Error in get_valid_submission_id for {member_email}: {e}"); return None
 
@@ -641,23 +642,19 @@ def survey(navigate_to, user_email,secrets):
     submission_action = st.session_state.get('submission_action', '')
     current_submission_id = st.session_state.get('current_submission_id')
     
-    # Display the primary action message (e.g., "Welcome back", "Dashboard is ready", etc.)
     if st.session_state.get('submission_message'):
         st.info(st.session_state.submission_message)
 
     COMPLETED_SURVEY_ACTIONS = {'VIEW_DASHBOARD_RECENT_COMPLETE', 'FINISHED_DASHBOARD_READY','VIEW_THANKS_RECENT_COMPLETE_ATHLETE', 'FINISHED_ATHLETE','VIEW_WAITING_RECENT_COMPLETE_OTHER', 'FINISHED_WAITING'}
 
-    # Show dashboard button or final messages
     if submission_action == 'VIEW_DASHBOARD_RECENT_COMPLETE':
         if st.button("View My Dashboard", key="view_dashboard_cta", use_container_width=True): navigate_to("Dashboard")
     
-    # Load survey progress data if it hasn't been loaded for this session
     if "responses" not in st.session_state or st.session_state.get('submission_id_loaded_for_survey') != current_submission_id:
         st.session_state.responses, st.session_state.saved_categories, st.session_state.category_avgs = load_user_progress(user_email, current_submission_id, survey_questions, likert_options)
         st.session_state.submission_id_loaded_for_survey = current_submission_id
         st.session_state.selected_category = None
 
-    # --- Admin Panel Logic (Refined) ---
     is_admin = st.session_state.get('is_admin_for_reminders')
     is_on_main_screen = st.session_state.get('selected_category') is None
     admin_has_completed_survey = st.session_state.get('submission_action') in COMPLETED_SURVEY_ACTIONS
@@ -711,7 +708,6 @@ def survey(navigate_to, user_email,secrets):
         else:
             st.info("🔒 **Admin Panel Locked:** Please complete your own survey to unlock admin features.")
 
-    # --- Main Survey Form ---
     if st.session_state.get('selected_category') is None:
         if submission_action not in COMPLETED_SURVEY_ACTIONS:
             st.title("QUESTIONNAIRE"); st.subheader("Choose a category to begin or continue:")
@@ -745,7 +741,7 @@ def survey(navigate_to, user_email,secrets):
         st.subheader(f"Category: {current_sel_cat_form}"); st.markdown("---")
         qs_in_curr_cat_form = survey_questions[current_sel_cat_form]; ans_count_curr_cat_form = 0
         for q_key_form, q_text_form in qs_in_curr_cat_form.items():
-            st.markdown(f"**{survey_questions[current_sel_cat_form][q_key_form]}**") # Use full text
+            st.markdown(f"**{survey_questions[current_sel_cat_form][q_key_form]}**")
             curr_resp_for_q_form = st.session_state.responses[current_sel_cat_form].get(q_key_form, "Select")
             try: resp_idx_form = likert_options.index(curr_resp_for_q_form)
             except ValueError: resp_idx_form = 0
