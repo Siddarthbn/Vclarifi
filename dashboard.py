@@ -137,17 +137,29 @@ def display_header_with_logo_and_text(title, logo_path, org_name):
 
 # -------------------- Data Access --------------------
 def get_db_connection():
-    """Establishes database connection using secrets from AWS Secrets Manager."""
+    """Establishes database connection using a flat secret structure from AWS."""
     secrets = get_aws_secrets()
     if not secrets:
         st.error("❌ Database connection failed: Could not load secrets from AWS.")
         return None
+    
+    # REFINED: Adapted for a flat JSON structure from AWS Secrets Manager.
     try:
-        conn = mysql.connector.connect(**secrets["database"])
+        # Manually map keys from the flat secret to what mysql.connector expects.
+        db_params = {
+            'host': secrets['DB_HOST'],
+            'database': secrets['DB_DATABASE'],
+            'user': secrets['DB_USER'],
+            'password': secrets['DB_PASSWORD']
+        }
+        conn = mysql.connector.connect(**db_params)
         return conn
+    except KeyError as e:
+        st.error(f"❌ Database connection error: The key {e} is missing from your AWS secret.")
+        st.error("Please ensure DB_HOST, DB_DATABASE, DB_USER, and DB_PASSWORD are all in your secret.")
+        return None
     except mysql.connector.Error as err:
         st.error(f"❌ Database connection error: {err}")
-        st.error("Please ensure your AWS secrets contain the correct database credentials.")
         return None
 
 @st.cache_data(ttl=600)
@@ -284,17 +296,21 @@ def display_insight_text(df_best, df_worst, benchmark):
 
 # -------------------- Email Functions --------------------
 def send_email_with_attachment(recipient_email, subject, body_text):
-    """Sends an email using secrets from AWS Secrets Manager."""
+    """Sends an email using a flat secret structure from AWS Secrets Manager."""
     secrets = get_aws_secrets()
     if not secrets:
         st.error("Email failed: Could not load secrets from AWS.")
         return False
+
+    # REFINED: Adapted for a flat JSON structure.
     try:
-        config = secrets["email"]
-        sender_email, sender_password = config["SENDER_EMAIL"], config["SENDER_APP_PASSWORD"]
-        smtp_server, smtp_port = config["SMTP_SERVER"], int(config["SMTP_PORT"])
-    except KeyError:
-        st.error("Email configuration is missing from AWS secrets.")
+        sender_email = secrets["SENDER_EMAIL"]
+        sender_password = secrets["SENDER_APP_PASSWORD"]
+        smtp_server = secrets["SMTP_SERVER"]
+        smtp_port = int(secrets["SMTP_PORT"])
+    except KeyError as e:
+        st.error(f"Email failed: The key {e} is missing from your AWS secret.")
+        st.error("Please ensure SENDER_EMAIL, SENDER_APP_PASSWORD, etc., are in your secret.")
         return False
 
     msg = MIMEMultipart()
@@ -323,7 +339,6 @@ def format_results_for_email(org_data, sub_vars_map, benchmark):
     return body
 
 # -------------------- Main Dashboard ------------------
-# REFINED: Added **kwargs to accept and ignore extra arguments like 'secrets'
 def dashboard(navigate_to, user_email, **kwargs):
     """Renders the main dashboard page."""
     set_background(BG_IMAGE_PATH)
@@ -376,7 +391,6 @@ def dashboard(navigate_to, user_email, **kwargs):
     _, df_worst = display_sub_category_performance_table(org_data, sub_vars_map, "Worst")
     display_insight_text(df_best, df_worst, benchmark)
 
-# REFINED: Added **kwargs to accept and ignore extra arguments
 def placeholder_page(title, navigate_to, **kwargs):
     set_background(BG_IMAGE_PATH)
     display_header_with_logo_and_text(title, LOGO_PATH, st.session_state.get('org_name_for_header', "Organization"))
@@ -391,7 +405,6 @@ if __name__ == "__main__":
 
     def nav_to(page_name): st.session_state.page = page_name; st.rerun()
     
-    # This map now calls functions that can accept extra arguments without erroring
     page_map = {"Dashboard": lambda: dashboard(navigate_to=nav_to, user_email=st.session_state.user_email)}
     
     page_func = page_map.get(st.session_state.page)
