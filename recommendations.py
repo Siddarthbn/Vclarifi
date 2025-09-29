@@ -17,6 +17,14 @@ BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
 GEMINI_MODEL = "models/gemini-1.5-flash"
 
+# --- PAGE CONFIGURATION ---
+# This must be the first Streamlit command in your script
+st.set_page_config(
+    page_title="Vclarifi",
+    page_icon="images/VTARA.png", # Path to your logo file
+    layout="wide"
+)
+
 # --- Survey Questions Dictionary ---
 SURVEY_QUESTIONS = {
     "Leadership": {
