@@ -13,6 +13,13 @@ import time
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
 
+st.set_page_config(
+    page_title="Vclarifi",
+    page_icon="images/VTARA.png",
+    layout="wide", # Optional: you can change the layout
+)
+
+
 # ---------- DATABASE CONNECTION (receives secrets, uses session_state) ----------
 class DatabaseConnection:
     @staticmethod
