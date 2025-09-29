@@ -24,6 +24,14 @@ import logging
 LOGO_PATH = os.path.join("images", "VTARA.png")
 BG_IMAGE_PATH = os.path.join("images", "bg.jpg")
 
+# --- PAGE CONFIGURATION ---
+# This must be the first Streamlit command in your script
+st.set_page_config(
+    page_title="Vclarifi",
+    page_icon="images/VTARA.png", # Path to your logo file
+    layout="wide"
+)
+
 
 # ==============================================================================
 # --- AWS SECRETS MANAGER HELPER ---
