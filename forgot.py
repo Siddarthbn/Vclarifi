@@ -17,6 +17,14 @@ RESET_CODE_EXPIRY_MINUTES = 15
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
 
+# --- PAGE CONFIGURATION ---
+# This must be the first Streamlit command in your script
+st.set_page_config(
+    page_title="Vclarifi",
+    page_icon="images/VTARA.png", # Path to your logo file
+    layout="wide"
+)
+
 # ---------- STREAMLIT PAGE CONFIGURATION ----------
 try:
     st.set_page_config(page_title="Forgot Password - VClarifi", layout="centered")
