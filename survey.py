@@ -11,6 +11,14 @@ import logging
 import json
 from botocore.exceptions import ClientError, NoCredentialsError
 
+# --- PAGE CONFIGURATION ---
+# This must be the first Streamlit command in your script
+st.set_page_config(
+    page_title="Vclarifi",
+    page_icon="images/VTARA.png", # Path to your logo file
+    layout="wide"
+)
+
 # ---------- LOGGING CONFIGURATION ----------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
