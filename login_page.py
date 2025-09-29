@@ -174,35 +174,35 @@ def login(navigate_to, secrets):
     col_left, col_right = st.columns([1.2, 1])
 
     with col_left:
-    try:
-        logo_image = Image.open(LOGO_IMAGE_PATH)
-        st.image(logo_image, width=300)
-        
-        st.markdown(
-            f"""
-            <style>
-                /* Target the div containing the image and text */
-                .left-column-container img {{
-                    margin-bottom: 0px; /* Removes margin below the image */
-                }}
-                .left-column-container .left-info {{
-                    margin-top: 0px; /* Removes margin above the text */
-                }}
-            </style>
-            <div class="left-column-container">
-                <img src="{LOGO_IMAGE_PATH}" width="300">
-                <div class="left-info">
-                    <div><b>📞 Phone:</b> +123-456-7890</div>
-                    <div><b>✉️ E-Mail:</b> hello@vclarifi.com</div>
-                    <div><b>🌐 Website:</b> www.vclarifi.com</div>
-                    <div><b>📍 Address:</b> Canberra, Australia</div>
+        # CORRECTED: The entire try/except block is now indented
+        try:
+            logo_image = Image.open(LOGO_IMAGE_PATH)
+            st.image(logo_image, width=300)
+            
+            st.markdown(
+                f"""
+                <style>
+                    /* Target the div containing the image and text */
+                    .left-column-container img {{
+                        margin-bottom: 0px; /* Removes margin below the image */
+                    }}
+                    .left-column-container .left-info {{
+                        margin-top: 0px; /* Removes margin above the text */
+                    }}
+                </style>
+                <div class="left-column-container">
+                    <div class="left-info">
+                        <div><b>📞 Phone:</b> +123-456-7890</div>
+                        <div><b>✉️ E-Mail:</b> hello@vclarifi.com</div>
+                        <div><b>🌐 Website:</b> www.vclarifi.com</div>
+                        <div><b>📍 Address:</b> Canberra, Australia</div>
+                    </div>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+                """,
+                unsafe_allow_html=True
+            )
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
 
     with col_right:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
