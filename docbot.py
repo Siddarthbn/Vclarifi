@@ -255,7 +255,7 @@ def docbot(navigate_to):
     """Main function for the VCLARIFI DOCBOT application."""
     try:
         # NOTE: set_page_config is only called successfully once.
-        st.set_page_config(page_title="VCLARII", page_icon="images/VTARA.png", layout="wide")
+        st.set_page_config(page_title="VCLARIFI", page_icon="images/VTARA.png", layout="wide")
     except st.errors.StreamlitAPIException:
         pass # Handle case where config is already set
 
@@ -425,3 +425,4 @@ if __name__ == "__main__":
 
     # Start the Streamlit App
     docbot(mock_navigate_to)
+
