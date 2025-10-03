@@ -4,6 +4,7 @@ import boto3
 import json
 import traceback
 import logging
+import inspect # <-- NEW: Import 'inspect' to check function signatures
 
 # --- PAGE CONFIGURATION ---
 # This must be the first Streamlit command in your script
@@ -77,7 +78,8 @@ def load_page():
     Acts as the main router for the application.
 
     It reads the current page from session state, checks for authentication,
-    and dynamically imports and calls the appropriate function from other files.
+    and dynamically imports and calls the appropriate function from other files,
+    passing only the arguments that the target function is defined to accept.
     """
     page_key = st.session_state.current_page
     secrets = st.session_state.get('secrets')
@@ -88,10 +90,6 @@ def load_page():
         return
 
     # --- Page Module Configuration ---
-    # This dictionary is the central routing table for the app.
-    #   'module_name': The .py file to import (without the .py extension).
-    #   'function_name': The function to call within that file.
-    #   'requires_login': A boolean to protect pages that need an authenticated user.
     page_modules = {
         'login': {'module_name': 'login_page', 'function_name': 'login', 'requires_login': False},
         'User_Registration': {'module_name': 'user_registration', 'function_name': 'user_registration_entrypoint', 'requires_login': False},
@@ -122,17 +120,36 @@ def load_page():
         module = importlib.import_module(page_info['module_name'])
         page_function = getattr(module, page_info['function_name'])
 
-        # Prepare a base set of arguments for all page functions.
-        args_to_pass = {
+        # Get the function signature to determine what arguments it accepts.
+        function_signature = inspect.signature(page_function)
+
+        # Prepare all possible arguments.
+        all_args = {
             "navigate_to": navigate_to,
-            "secrets": secrets
+            "secrets": secrets,
+            "user_email": user_email
         }
 
-        # Only add user_email to the arguments if the page requires a login.
-        if page_info['requires_login']:
-            args_to_pass['user_email'] = user_email
+        # Dynamically filter arguments based on the function's signature.
+        args_to_pass = {}
+        for arg_name in function_signature.parameters:
+            if arg_name in all_args:
+                args_to_pass[arg_name] = all_args[arg_name]
+        
+        # Security/Logic check: Do not pass user_email if the page is not protected.
+        if 'user_email' in args_to_pass and not page_info['requires_login']:
+             # This handles cases like 'docbot' which doesn't require login
+             # but might have a function signature that includes user_email by accident.
+             # In the context of the error, this is less relevant, but it's good practice.
+             if 'user_email' in function_signature.parameters:
+                 args_to_pass['user_email'] = None # Pass None if it accepts it but isn't required/logged in
+             else:
+                 del args_to_pass['user_email']
+
 
         # Call the target function with the correct set of arguments.
+        # This fixes the 'TypeError: docbot() got an unexpected keyword argument 'secrets''
+        # because the 'secrets' key is now only included if docbot() accepts it.
         page_function(**args_to_pass)
 
     except Exception as e:
