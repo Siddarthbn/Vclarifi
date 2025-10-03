@@ -12,8 +12,8 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 
 # --- Constants ---
-BG_IMAGE_PATH = "C:/Users/DELL/Desktop/background.jpg"
-LOGO_IMAGE_PATH = "C:/Users/DELL/Desktop/VTARA.png"
+BG_IMAGE_PATH = "images/background.jpg"
+LOGO_IMAGE_PATH = "images/VTARA.png"
 AVATAR_USER_PATH = "images/avatar_user.png"
 AVATAR_BOT_PATH = "images/avatar_chatbot.png"
 
@@ -302,5 +302,6 @@ if __name__ == "__main__":
     if not os.path.exists("images"):
         os.makedirs("images")
         st.warning("Created 'images' folder. Please add your avatar images there.")
+
 
     docbot(mock_navigate_to)
