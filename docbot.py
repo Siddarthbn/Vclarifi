@@ -128,6 +128,20 @@ def set_docbot_background_style(image_path):
             .sidebar-status-warn {{ color: #FFD700 !important; font-weight: bold;}}
             .sidebar-status-error {{ color: #FF6347 !important; font-weight: bold;}}
             .sidebar-status-info {{ color: #ADD8E6 !important; }}
+            
+            /* --- PDF Uploader Customization --- */
+            /* Target the st.file_uploader container */
+            div[data-testid="stFileUploaderDropzone"] {{
+                background-color: rgba(255, 255, 255, 0.2); /* Semi-transparent white */
+                border: 2px dashed #008CBA; /* Blue dashed border */
+                border-radius: 10px;
+                padding: 20px;
+                margin-top: 10px;
+                min-height: 150px;
+            }}
+            div[data-testid="stFileUploaderDropzone"] p {{
+                color: white !important; /* Ensure text remains visible */
+            }}
             </style>
         """, unsafe_allow_html=True)
 
@@ -240,7 +254,8 @@ def display_chat_message_styled(content, is_user=False):
 def docbot(navigate_to):
     """Main function for the VCLARIFI DOCBOT application."""
     try:
-        st.set_page_config(page_title="VCLARIFI DOCBOT", page_icon="🤖", layout="wide")
+        # NOTE: set_page_config is only called successfully once.
+        st.set_page_config(page_title="VCLARII", page_icon="images/VTARA.png", layout="wide")
     except st.errors.StreamlitAPIException:
         pass # Handle case where config is already set
 
@@ -285,8 +300,10 @@ def docbot(navigate_to):
     # --- Sidebar for Document Management ---
     with st.sidebar:
         st.subheader('VCLARIFI DOCBOT 🤖')
-        # Display successful secret loading
-        st.markdown(f"<p class='sidebar-status-ok'>AWS Secret: **{SECRET_NAME}** loaded. ✅</p>", unsafe_allow_html=True)
+        
+        # NOTE: Removed the line displaying AWS Secret status in the frontend
+        # st.markdown(f"<p class='sidebar-status-ok'>AWS Secret: **{SECRET_NAME}** loaded. ✅</p>", unsafe_allow_html=True)
+        
         st.markdown("---")
         st.subheader('1. Upload PDF Files')
         uploaded_files = st.file_uploader(
