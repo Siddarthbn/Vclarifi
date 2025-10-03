@@ -1,6 +1,10 @@
 import base64
 import os
 import streamlit as st
+# AWS SDK for Secrets Manager
+import boto3 
+from botocore.exceptions import ClientError
+# Other libraries (assuming they are all installed)
 from PyPDF2 import PdfReader
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -11,26 +15,65 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 
+# --- AWS Configuration ---
+# You must replace this with your actual Secret Name and Region!
+SECRET_NAME = "production/vclarifi/secrets" 
+REGION_NAME = "us-east-1" 
+
 # --- Constants ---
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
 AVATAR_USER_PATH = "images/avatar_user.png"
 AVATAR_BOT_PATH = "images/avatar_chatbot.png"
 
-# --- REFINED: API Key Configuration ---
-# The code now exclusively reads the API key from your Streamlit secrets file.
-# Please ensure your .streamlit/secrets.toml file contains:
-#
-# groq_apiReadKey = "gsk_..."
+# --- NEW: AWS Secrets Manager Helper Function ---
+@st.cache_resource
+def get_secret(secret_name, region_name, key_in_secret='groq_api_key'):
+    """
+    Retrieves the secret value from AWS Secrets Manager.
+    
+    The secret is assumed to be stored as a JSON key-value pair, 
+    where 'groq_api_key' is the key holding the Groq API value.
+    """
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
 
-try:
-    # Access the key directly from secrets.
-    groq_api_key_to_use = st.secrets.groq_apiReadKey
-except (AttributeError, KeyError):
-    # Set to None if not found; the app will display a clear error message below.
-    groq_api_key_to_use = None
+    try:
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+    except ClientError as e:
+        error_message = f"AWS Secrets Manager Error: {e.response['Error']['Code']}. Check IAM permissions, secret name, and region."
+        st.error(f"🚨 Failed to retrieve secret from AWS: {error_message}")
+        # Optionally, log the full error for debugging
+        # print(f"Full AWS Error: {e}") 
+        return None
+    
+    # Decrypts secret using the associated KMS key.
+    # The secret value is retrieved as a string (JSON string)
+    secret = get_secret_value_response['SecretString']
+    
+    # Parse the JSON string to get the specific key value
+    import json
+    try:
+        secret_dict = json.loads(secret)
+        return secret_dict.get(key_in_secret)
+    except json.JSONDecodeError:
+        st.error("🚨 Secret Manager payload is not valid JSON. Ensure it's a key-value pair.")
+        return None
 
-# --- Helper functions ---
+# --- API Key Configuration ---
+# Attempt to fetch the API key from AWS Secrets Manager
+groq_api_key_to_use = get_secret(SECRET_NAME, REGION_NAME, key_in_secret='groq_api_key')
+
+# --- Helper functions (Unchanged) ---
+# ... (encode_image_to_base64, set_docbot_background_style, 
+# display_docbot_logo_and_title, load_pdfs_and_extract_text, 
+# create_vector_store_from_docs, display_chat_message_styled) ...
+
 def encode_image_to_base64(image_path):
     try:
         if not os.path.isabs(image_path):
@@ -86,7 +129,7 @@ def set_docbot_background_style(image_path):
                 background-color: white;
                 color: black;
                 border: 2px solid #008CBA;
-            }}
+                }}
             div[data-testid^="stChatMessage"] div[data-testid^="stMarkdownContainer"] p {{
                 color: white !important;
             }}
@@ -184,6 +227,7 @@ def display_chat_message_styled(content, is_user=False):
     """
     st.markdown(message_html, unsafe_allow_html=True)
 
+
 # --- Main Page Function ---
 def docbot(navigate_to):
     try:
@@ -191,14 +235,17 @@ def docbot(navigate_to):
     except st.errors.StreamlitAPIException:
         pass # Already set
 
+    global groq_api_key_to_use
+    
     if not groq_api_key_to_use:
-        st.error("🚨 GROQ API Key not configured.")
-        st.info("Please add your Groq API key to your .streamlit/secrets.toml file and restart the app.")
-        st.code("Example .streamlit/secrets.toml:\n\ngroq_apiReadKey = \"gsk_...\"")
+        st.error("🚨 GROQ API Key not retrieved from AWS Secrets Manager.")
+        st.info(f"Please check that the Secret: **'{SECRET_NAME}'** in region **'{REGION_NAME}'** exists and contains the key **'groq_api_key'**.")
+        st.info("Also, ensure your execution environment (e.g., EC2 instance, local machine) has **IAM permissions** to access AWS Secrets Manager.")
         return
 
     try:
-        llm = ChatGroq(model_name='gemma2-9b-it', groq_api_key=groq_api_key_to_use)
+        # NOTE: groq_api_key is explicitly passed, not relying on environment variable
+        llm = ChatGroq(model_name='gemma2-9b-it', groq_api_key=groq_api_key_to_use) 
     except Exception as e:
         st.error(f"🚨 Failed to initialize LLM with Groq: {e}.")
         return
@@ -220,6 +267,7 @@ def docbot(navigate_to):
 
     with st.sidebar:
         st.subheader('VCLARIFI DOCBOT 🤖')
+        st.markdown(f"<p class='sidebar-status-ok'>AWS Secret: **{SECRET_NAME}** loaded. ✅</p>", unsafe_allow_html=True)
         st.markdown("---")
         st.subheader('1. Upload PDF Files')
         uploaded_files = st.file_uploader(
