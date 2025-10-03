@@ -99,6 +99,7 @@ def load_page():
         'Survey': {'module_name': 'survey', 'function_name': 'survey', 'requires_login': True},
         'Dashboard': {'module_name': 'dashboard', 'function_name': 'dashboard', 'requires_login': True},
         'Recommendations': {'module_name': 'recommendations', 'function_name': 'recommendations_page', 'requires_login': True},
+        'docbot': {'module_name': 'docbot', 'function_name': 'docbot', 'requires_login': False},
     }
 
     page_info = page_modules.get(page_key)
