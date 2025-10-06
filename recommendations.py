@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 # --- Configuration ---
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
-GEMINI_MODEL = "models/gemini-1.5-flash"
+GEMINI_MODEL = ""gemini-1.5-flash""
 
 # --- PAGE CONFIGURATION ---
 # This must be the first Streamlit command in your script
