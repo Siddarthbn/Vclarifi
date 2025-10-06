@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError
 
 # --- AWS Secrets Manager Configuration (Refined based on image) ---
 # NOTE: Update 'VCLARIFI_SECRETS_NAME' to the actual name of your single AWS secret.
-AWS_REGION = "us-east-1"  # <-- **UPDATE THIS TO YOUR AWS REGION**
+AWS_REGION = "us-east-1"
 VCLARIFI_SECRETS_NAME = "production/vclarifi/secrets" # Placeholder name based on user prompt
 
 # --- Configuration (No changes needed here) ---
