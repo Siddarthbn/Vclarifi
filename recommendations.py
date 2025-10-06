@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
 # 🚨 CORRECTED: Use the correct model name without the 'models/' prefix
-GEMINI_MODEL = "gemini-1.5-flash" 
+GEMINI_MODEL = "gemini-2.5-flash"
 
 # --- AWS Secrets Manager Configuration (REQUIRED TO BE CORRECT) ---
 # 🚨 CUSTOMIZED: Set the name of your secret in AWS Secrets Manager
