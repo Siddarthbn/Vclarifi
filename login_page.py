@@ -194,7 +194,7 @@ def login(navigate_to, secrets):
                     <div class="left-info">
                         <div><b>📞 Phone:</b> +123-456-7890</div>
                         <div><b>✉️ E-Mail:</b> hello@vclarifi.com</div>
-                        <div><b>🌐 Website:</b> www.vclarifi.com</div>
+                        <div><b>🌐 Website:</b> www.vclarifiapp.com</div>
                         <div><b>📍 Address:</b> Canberra, Australia</div>
                     </div>
                 </div>
