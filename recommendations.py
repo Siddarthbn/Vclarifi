@@ -6,10 +6,13 @@ import mysql.connector
 from mysql.connector import Error
 import google.generativeai as genai
 
-# --- NEW: Imports for AWS Secrets Manager ---
+# --- Imports for AWS Secrets Manager ---
 import boto3
 import json
 import logging
+
+# Set up basic logging (optional, but good practice)
+logging.basicConfig(level=logging.INFO)
 
 
 # --- Configuration ---
@@ -66,14 +69,14 @@ SURVEY_QUESTIONS = {
 }
 
 # ==============================================================================
-# --- NEW: AWS SECRETS MANAGER HELPER ---
+# --- REFINED: AWS SECRETS MANAGER HELPER ---
 # ==============================================================================
-@st.cache_data(ttl=600)  # Cache secrets for 10 minutes to reduce API calls
+@st.cache_data(ttl=600)  # Cache ALL secrets for 10 minutes (good for DB credentials)
 def get_aws_secrets():
     """
     Fetches secrets from AWS Secrets Manager.
     """
-    secret_name = "production/vclarifi/secrets"  # Your secret's unique name/path
+    secret_name = "production/vclarifi/secrets"
     region_name = "us-east-1"
 
     session = boto3.session.Session()
@@ -81,13 +84,27 @@ def get_aws_secrets():
 
     try:
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-        secret_string = get_secret_value_response['SecretString']
+        
+        # Determine if the secret is a string (JSON) or binary
+        if 'SecretString' in get_secret_value_response:
+            secret_string = get_secret_value_response['SecretString']
+        elif 'SecretBinary' in get_secret_value_response:
+            secret_string = base64.b64decode(get_secret_value_response['SecretBinary']).decode('utf-8')
+        else:
+            raise ValueError("Secret not found or corrupted (missing SecretString/SecretBinary).")
+            
         logging.info("Secrets Loaded Successfully from AWS.")
         return json.loads(secret_string)
+        
+    except client.exceptions.ResourceNotFoundException:
+        logging.error(f"AWS Secrets Manager Error: Secret '{secret_name}' not found.")
+        st.error(f"FATAL: Secret '{secret_name}' not found in AWS.")
+        return None
     except Exception as e:
+        # Generic error catching for connectivity or parsing
         logging.error(f"AWS Secrets Manager Error: {e}")
         st.error("FATAL: Could not retrieve application secrets from AWS.")
-        st.error("Please contact support and check IAM permissions and secret name.")
+        st.error(f"Please check IAM permissions for the secret: {secret_name} in {region_name}.")
         return None
 
 # --- Utility Functions ---
@@ -136,7 +153,7 @@ def set_page_style(bg_image_path):
         h1, h2, h3, h4, h5, h6 {{ color: #FFFFFF !important; }}
         .stMarkdown p {{ color: #CBD5E1; }}
 
-        /* --- NEW: Page Header Container --- */
+        /* --- Page Header Container --- */
         .page-header-container {{
             background-color: rgba(26, 32, 44, 0.7);
             border-radius: 12px;
@@ -146,11 +163,11 @@ def set_page_style(bg_image_path):
         }}
         .page-header-container h1 {{
             margin-bottom: 0.5rem;
-            font-size: 2.5rem; /* Larger title font */
+            font-size: 2.5rem;
         }}
         .page-header-container h3 {{
             margin-top: 0;
-            color: #A0AEC0 !important; /* Lighter subtitle color */
+            color: #A0AEC0 !important;
             font-weight: 400;
         }}
 
@@ -306,7 +323,7 @@ def fetch_organization_data(user_email):
             SELECT {', '.join(avg_cols)}
             FROM (
                 SELECT *,
-                       ROW_NUMBER() OVER(PARTITION BY Email_ID ORDER BY id DESC) as rn
+                        ROW_NUMBER() OVER(PARTITION BY Email_ID ORDER BY id DESC) as rn
                 FROM Averages
                 WHERE Email_ID IN ({placeholders})
             ) ranked_data
@@ -343,18 +360,42 @@ def fetch_organization_data(user_email):
     finally:
         if conn and conn.is_connected(): conn.close()
 
-# --- Recommendation Generation ---
+# ----------------------------------------------------------------------------------
+# --- REFINED: Recommendation Generation (Crucial for API Key Fix) ---
+# ----------------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def generate_recommendations(_category_name, average_score, questions_context):
-    """Generates recommendations using Gemini API key from AWS Secrets Manager."""
-    secrets = get_aws_secrets()
-    if not secrets:
-        st.error("Failed to generate recommendations: Could not load secrets from AWS.")
-        return "Sorry, we were unable to generate recommendations at this time."
-
+    """Generates recommendations using Gemini API key, ensuring a fresh key is used."""
+    
+    gemini_api_key = None
     try:
-        genai.configure(api_key=secrets["GEMINI_API_KEY"])
+        # **REFINEMENT:** Call the wrapped function to bypass the @st.cache_data decorator 
+        # on get_aws_secrets(). This forces a fresh fetch from AWS Secrets Manager 
+        # for the API key, preventing stale key issues.
+        all_secrets = get_aws_secrets.__wrapped__() 
+        
+        if not all_secrets:
+            st.error("Failed to generate recommendations: Could not load secrets from AWS.")
+            return "Sorry, we were unable to generate recommendations at this time."
+            
+        gemini_api_key = all_secrets.get("GEMINI_API_KEY")
+        
+        if not gemini_api_key:
+            raise KeyError("GEMINI_API_KEY")
+            
+    except KeyError:
+        st.error("API key configuration error: 'GEMINI_API_KEY' not found in AWS secrets.")
+        return "Sorry, we were unable to generate recommendations due to a configuration error."
+    except Exception as e:
+        st.error(f"An error occurred while fetching secrets for Gemini: {e}")
+        return "Sorry, we were unable to generate recommendations at this time. (Secret Fetch Error)"
+
+
+    # Configure and Generate Content
+    try:
+        genai.configure(api_key=gemini_api_key)
         model = genai.GenerativeModel(model_name=GEMINI_MODEL)
+        
         category_questions = questions_context.get(_category_name, {})
         question_details = "\n".join([f"- **{sub_cat}:** {question}" for sub_cat, question in category_questions.items()])
         
@@ -371,13 +412,11 @@ def generate_recommendations(_category_name, average_score, questions_context):
         
         response = model.generate_content(prompt)
         return getattr(response, "text", "Could not generate text response from the model.")
-    
-    except KeyError:
-        st.error("API key configuration error: 'GEMINI_API_KEY' not found in AWS secrets.")
-        return "Sorry, we were unable to generate recommendations due to a configuration error."
+        
     except Exception as e:
-        st.error(f"An error occurred while generating recommendations for {_category_name}: {e}")
-        return "Sorry, we were unable to generate recommendations at this time."
+        # Catch errors specifically from the API call (e.g., invalid key, rate limit)
+        st.error(f"An error occurred during Gemini API call for {_category_name}: {e}")
+        return "Sorry, we were unable to generate recommendations at this time. (Gemini API Call Failed)"
 
 # --- UI Rendering Functions ---
 def display_category_grid(category_scores, navigate_to):
@@ -434,7 +473,7 @@ def display_recommendation_detail(category, score):
         """, unsafe_allow_html=True)
 
 # --- Main Page Function ---
-def recommendations_page(navigate_to=None, user_email=None, **kwargs): # Added **kwargs
+def recommendations_page(navigate_to=None, user_email=None, **kwargs):
     """Renders the main recommendations page."""
     set_page_style(BG_IMAGE_PATH)
     
@@ -484,7 +523,8 @@ if __name__ == "__main__":
     st.set_page_config(layout="wide", page_title="VClarifi Recommendations")
 
     if 'user_email' not in st.session_state:
-        st.session_state['user_email'] = 'admin_alpha@example.com'
+        # Example user email for testing
+        st.session_state['user_email'] = 'admin_alpha@example.com' 
     
     if 'page' not in st.session_state:
         st.session_state['page'] = 'Recommendations'
@@ -503,4 +543,3 @@ if __name__ == "__main__":
         st.write("This is the main dashboard.")
         if st.button("Go to Recommendations"):
             nav_to("Recommendations")
-
