@@ -6,6 +6,9 @@ import mysql.connector
 from mysql.connector import Error
 import google.generativeai as genai
 import logging
+import boto3 
+import json
+from botocore.exceptions import ClientError
 
 # Set up basic logging (optional, but good practice)
 logging.basicConfig(level=logging.INFO)
@@ -13,9 +16,14 @@ logging.basicConfig(level=logging.INFO)
 # --- Configuration ---
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
-# 🚨 FIX: The error is caused by the prefix 'models/'. 
-# The SDK requires the model name directly.
+# 🚨 CORRECTED: Use the correct model name without the 'models/' prefix
 GEMINI_MODEL = "gemini-1.5-flash" 
+
+# --- AWS Secrets Manager Configuration (REQUIRED TO BE CORRECT) ---
+# 🚨 CUSTOMIZED: Set the name of your secret in AWS Secrets Manager
+SECRET_NAME = "production/vclarifi/secrets" 
+# 🚨 CUSTOMIZED: Set the region where your secret is stored
+REGION_NAME = "us-east-1" 
 
 # --- PAGE CONFIGURATION ---
 # This must be the first Streamlit command in your script
@@ -67,34 +75,66 @@ SURVEY_QUESTIONS = {
 
 
 # ==============================================================================
-# --- MOCK/PLACEHOLDER: Secrets Manager (Replace with your actual AWS/DB logic) ---
+# --- CRITICAL FIX: Secrets Manager (Uses Boto3 to fetch from AWS) ---
 # ==============================================================================
-def get_application_secrets():
+@st.cache_data(show_spinner="Connecting to AWS Secrets Manager...")
+def get_application_secrets(secret_name, region_name):
     """
-    MOCK: Replaces the logic for fetching secrets (e.g., from AWS Secrets Manager).
-    In a deployed environment, this must return a dict with 'GEMINI_API_KEY',
-    'DB_HOST', 'DB_USER', 'DB_PASSWORD', and 'DB_DATABASE'.
+    Fetches and parses the secret from AWS Secrets Manager using boto3.
     """
-    # Attempt to use environment variable as the most common fallback in Streamlit Cloud
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    
-    if not gemini_key:
-        # In a deployed app, you'd check AWS Secrets Manager here. 
-        # For local testing, ensure GEMINI_API_KEY is set in your environment.
-        st.error("FATAL: GEMINI_API_KEY not found in environment variables or mock secret store.")
+    try:
+        # Create a Secrets Manager client
+        session = boto3.session.Session()
+        client = session.client(
+            service_name='secretsmanager',
+            region_name=region_name
+        )
+
+        # Attempt to retrieve the secret value
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+
+    except ClientError as e:
+        # Handle exceptions that may occur during the API call
+        if e.response['Error']['Code'] == 'ResourceNotFoundException':
+            st.error(f"❌ Secret not found: {secret_name}. Check the Secret Name and Region.")
+        elif e.response['Error']['Code'] == 'AccessDeniedException':
+            st.error("❌ Access Denied. Check IAM permissions for 'secretsmanager:GetSecretValue'.")
+        elif e.response['Error']['Code'] == 'DecryptionFailureException':
+            st.error("❌ Secret decryption failed. Check KMS key permissions.")
+        elif e.response['Error']['Code'] == 'InternalServiceErrorException':
+            st.error("❌ AWS internal service error.")
+        else:
+            st.error(f"❌ AWS Secrets Manager Error: {e}")
         return None
-        
-    return {
-        "GEMINI_API_KEY": gemini_key,
-        # Placeholders for DB credentials
-        'DB_HOST': 'your_db_host',
-        'DB_DATABASE': 'your_db_name',
-        'DB_USER': 'your_db_user',
-        'DB_PASSWORD': 'your_db_password'
-    }
+    except Exception as e:
+        st.error(f"❌ General Boto3/AWS Connection Error: Ensure Boto3 is installed and AWS credentials are set up: {e}")
+        return None
+
+    # The secret value is a JSON string which needs to be parsed
+    if 'SecretString' in get_secret_value_response:
+        secret = get_secret_value_response['SecretString']
+        try:
+            secrets_dict = json.loads(secret)
+            
+            # Perform basic validation on the expected keys
+            required_keys = ["GEMINI_API_KEY", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_DATABASE"]
+            if not all(k in secrets_dict for k in required_keys):
+                st.error("❌ Secret JSON is missing one or more required keys: GEMINI_API_KEY, DB_HOST, etc. Check the secret's content.")
+                return None
+            
+            return secrets_dict
+            
+        except json.JSONDecodeError:
+            st.error("❌ Could not parse the SecretString as JSON. Is the secret stored as a valid JSON string?")
+            return None
+    
+    st.error("❌ Secret found but neither SecretString nor SecretBinary were populated.")
+    return None
 
 # ==============================================================================
-# --- UTILITY FUNCTIONS (Retained and simplified for clarity) ---
+# --- UTILITY FUNCTIONS (Retained) ---
 # ==============================================================================
 
 def encode_image_to_base64(image_path):
@@ -269,19 +309,23 @@ def get_score_indicator_html(score):
 
 
 # ==============================================================================
-# --- DATA ACCESS (Mocked for environment where DB access is unavailable) ---
+# --- DATA ACCESS (Uses Boto3-based secret getter) ---
 # ==============================================================================
 
 @st.cache_data
 def fetch_organization_data(user_email):
     """Fetches organization data using credentials from the secret store."""
-    secrets = get_application_secrets() # Use the general secret getter
+    
+    # Use the Boto3 function to get the actual secrets
+    secrets = get_application_secrets(SECRET_NAME, REGION_NAME) 
+    
     if not secrets:
-        st.error("❌ Database connection failed: Could not load application secrets.")
+        st.info("Cannot proceed without valid secrets.")
         return None, None
     
     conn = None
     try:
+        # DB credentials retrieved from the parsed secret
         db_params = {
             'host': secrets['DB_HOST'],
             'database': secrets['DB_DATABASE'],
@@ -289,7 +333,7 @@ def fetch_organization_data(user_email):
             'password': secrets['DB_PASSWORD']
         }
         
-        # MOCK Data for demonstration if DB connection is not possible:
+        # MOCK Data for demonstration if DB connection is not possible
         if db_params['host'] == 'your_db_host':
             org_name = "Mock Organization Alpha"
             # Simulate a successful data fetch
@@ -304,7 +348,7 @@ def fetch_organization_data(user_email):
             }
             return org_data, org_name
         
-        # --- ORIGINAL DB LOGIC (Uncomment when a real DB is connected) ---
+        # --- LIVE DB LOGIC ---
         conn = mysql.connector.connect(**db_params)
         cursor = conn.cursor(dictionary=True)
         # 1. Fetch Organization Name
@@ -315,11 +359,11 @@ def fetch_organization_data(user_email):
             return None, None
         org_name = user_org_info['organisation_name']
         
-        # 2. Fetch all user emails for the organization
+        # 2. Fetch all user emails for the organization (Logic retained)
         cursor.execute("SELECT Email_Id FROM user_registration WHERE organisation_name = %s", (org_name,))
         org_emails = [row['Email_Id'] for row in cursor.fetchall()]
 
-        # 3. Fetch latest averages for all users
+        # 3. Fetch latest averages for all users (Logic retained)
         avg_cols = ["Leadership_avg", "Influencers_avg", "Bonding_avg", "CulturePulse_avg", "Sustainability_avg", "Empower_avg"]
         placeholders = ','.join(['%s'] * len(org_emails))
         query = f"""
@@ -337,9 +381,8 @@ def fetch_organization_data(user_email):
         if not all_latest_user_data:
             st.warning(f"No survey data found for organization '{org_name}' in the Averages table.")
             return None, org_name
-
+            
         df_combined = pd.DataFrame(all_latest_user_data)
-        # Data validation and mean calculation
         for col in avg_cols:
              if col in df_combined.columns:
                  df_combined[col] = pd.to_numeric(df_combined[col], errors='coerce')
@@ -352,7 +395,7 @@ def fetch_organization_data(user_email):
         org_data = {'Organization_Name': org_name, **org_averages}
         return org_data, org_name
     except KeyError as e:
-        st.error(f"❌ Database error: A required key is missing from your secrets: {e}")
+        st.error(f"❌ Database error: A required key is missing from the AWS secret: {e}")
         return None, None
     except Error as err:
         st.error(f"❌ Database connection error: {err}")
@@ -362,7 +405,7 @@ def fetch_organization_data(user_email):
             conn.close()
 
 # ==============================================================================
-# --- REFINED: Recommendation Generation (Model Name Fix is Key) ---
+# --- Recommendation Generation (Uses new secret getter and corrected model) ---
 # ==============================================================================
 
 @st.cache_data(show_spinner=False)
@@ -372,7 +415,8 @@ def generate_recommendations(_category_name, average_score, questions_context):
     # 1. Fetch API Key
     gemini_api_key = None
     try:
-        all_secrets = get_application_secrets() 
+        # Use the Boto3 function to get the actual secrets
+        all_secrets = get_application_secrets(SECRET_NAME, REGION_NAME) 
         
         if not all_secrets:
             return "Sorry, we were unable to generate recommendations at this time (Secret Fetch Error)."
@@ -380,17 +424,17 @@ def generate_recommendations(_category_name, average_score, questions_context):
         gemini_api_key = all_secrets.get("GEMINI_API_KEY")
         
         if not gemini_api_key:
-            st.error("API key configuration error: 'GEMINI_API_KEY' not found in secrets.")
+            st.error("API key configuration error: 'GEMINI_API_KEY' not found in the AWS secret.")
             return "Sorry, we were unable to generate recommendations due to a configuration error (API Key Missing)."
             
     except Exception as e:
-        st.error(f"An error occurred while fetching secrets for Gemini: {e}")
+        st.error(f"An unexpected error occurred while fetching secrets for Gemini: {e}")
         return "Sorry, we were unable to generate recommendations at this time. (Secret Fetch Error)"
     
     # 2. Configure and Generate Content
     try:
         genai.configure(api_key=gemini_api_key)
-        # This will now correctly use "gemini-1.5-flash"
+        # Uses the corrected GEMINI_MODEL = "gemini-1.5-flash"
         model = genai.GenerativeModel(model_name=GEMINI_MODEL)
         
         category_questions = questions_context.get(_category_name, {})
@@ -467,7 +511,6 @@ def display_recommendation_detail(category, score):
     st.markdown(f"Current Performance: **{indicator_html}** (Score: {score:.2f} / 7)", unsafe_allow_html=True)
     
     with st.spinner(f"Generating tailored recommendations for {category}..."):
-        # The main call to the refined generation function
         recommendations_text = generate_recommendations(category, score, SURVEY_QUESTIONS) 
         st.markdown(f"""
             <div class="recommendation-container">
@@ -497,7 +540,7 @@ def recommendations_page(navigate_to=None, user_email=None, **kwargs):
     """, unsafe_allow_html=True)
 
     if org_data is None:
-        st.info("Waiting for organization data to be loaded or no data available.")
+        st.info("Waiting for organization data to be loaded or no data available. Check the error messages above for secret fetching issues.")
         if st.button("⬅️ Back to Dashboard"):
             if navigate_to: navigate_to("Dashboard")
         return
