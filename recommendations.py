@@ -1,5 +1,4 @@
 import os
-import json
 import base64
 import pandas as pd
 import streamlit as st
@@ -7,19 +6,27 @@ import mysql.connector
 from mysql.connector import Error
 import google.generativeai as genai
 
-# NEW IMPORT for AWS Secrets Manager
+# --- Imports for AWS Secrets Manager ---
 import boto3
-from botocore.exceptions import ClientError
+import json
+import logging
 
-# --- AWS Secrets Manager Configuration ---
-# NOTE: Update 'VCLARIFI_SECRETS_NAME' to the actual name of your single AWS secret.
-AWS_REGION = "us-east-1"
-VCLARIFI_SECRETS_NAME = "production/vclarifi/secrets" # Placeholder name based on user prompt
+# Set up basic logging (optional, but good practice)
+logging.basicConfig(level=logging.INFO)
 
-# --- Configuration (No changes needed here) ---
+
+# --- Configuration ---
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
-GEMINI_MODEL = "models/gemini-1.5-flash"
+GEMINI_MODEL = "gemini-1.5-flash"
+
+# --- PAGE CONFIGURATION ---
+# This must be the first Streamlit command in your script
+st.set_page_config(
+    page_title="Vclarifi",
+    page_icon="images/VTARA.png", # Path to your logo file
+    layout="wide"
+)
 
 # --- Survey Questions Dictionary ---
 SURVEY_QUESTIONS = {
@@ -61,81 +68,46 @@ SURVEY_QUESTIONS = {
     }
 }
 
-# --- REFINED AWS Secrets Manager Function ---
-@st.cache_resource
-def get_secrets_from_aws():
+# ==============================================================================
+# --- REFINED: AWS SECRETS MANAGER HELPER ---
+# ==============================================================================
+@st.cache_data(ttl=600)  # Cache ALL secrets for 10 minutes (good for DB credentials)
+def get_aws_secrets():
     """
-    Fetches all configuration secrets from a single AWS Secrets Manager entry,
-    parsing out DB, Gemini, and other keys.
+    Fetches secrets from AWS Secrets Manager.
     """
-    secrets = {}
-    
-    # Create a Secrets Manager client
+    secret_name = "production/vclarifi/secrets"
+    region_name = "us-east-1"
+
     session = boto3.session.Session()
-    client = session.client(service_name='secretsmanager', region_name=AWS_REGION)
+    client = session.client(service_name='secretsmanager', region_name=region_name)
 
     try:
-        get_secret_value_response = client.get_secret_value(SecretId=VCLARIFI_SECRETS_NAME)
+        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
         
+        # Determine if the secret is a string (JSON) or binary
         if 'SecretString' in get_secret_value_response:
             secret_string = get_secret_value_response['SecretString']
-            full_config = json.loads(secret_string)
-            
-            # 1. Database Configuration
-            secrets['database'] = {
-                'host': full_config.get('DB_HOST'),
-                'database': full_config.get('DB_DATABASE'),
-                'user': full_config.get('DB_USER'),
-                'password': full_config.get('DB_PASSWORD'),
-                'port': int(full_config.get('DB_PORT', 3306)) # Ensure port is an integer
-            }
-
-            # 2. API Keys
-            secrets['gemini'] = {'api_key': full_config.get('GEMINI_API_KEY')}
-            secrets['groq'] = {'api_key': full_config.get('groq_api_key')}
-            
-            # 3. Email Configuration
-            secrets['email'] = {
-                'sender_email': full_config.get('SENDER_EMAIL'),
-                'sender_app_password': full_config.get('SENDER_APP_PASSWORD'),
-                'smtp_server': full_config.get('SMTP_SERVER'),
-                'smtp_port': full_config.get('SMTP_PORT')
-            }
-
-            # Basic Validation
-            if not secrets['database']['host'] or not secrets['gemini']['api_key']:
-                st.error("Missing critical configuration keys (DB_HOST or GEMINI_API_KEY) in the AWS secret.")
-                return None
-            
-            return secrets
-
+        elif 'SecretBinary' in get_secret_value_response:
+            secret_string = base64.b64decode(get_secret_value_response['SecretBinary']).decode('utf-8')
         else:
-            st.error(f"Secret '{VCLARIFI_SECRETS_NAME}' is not a string secret.")
-            return None
-
-    except ClientError as e:
-        # Log common errors for better troubleshooting
-        error_message = f"AWS Secrets Manager Error fetching secret '{VCLARIFI_SECRETS_NAME}': {e}"
-        st.error(f"AWS Secrets Manager Error: {error_message}")
-        st.info("Ensure the secret name is correct, AWS region is set, and IAM permissions are granted for 'secretsmanager:GetSecretValue'.")
+            raise ValueError("Secret not found or corrupted (missing SecretString/SecretBinary).")
+            
+        logging.info("Secrets Loaded Successfully from AWS.")
+        return json.loads(secret_string)
+        
+    except client.exceptions.ResourceNotFoundException:
+        logging.error(f"AWS Secrets Manager Error: Secret '{secret_name}' not found.")
+        st.error(f"FATAL: Secret '{secret_name}' not found in AWS.")
         return None
-    except json.JSONDecodeError:
-        st.error(f"The content of the secret '{VCLARIFI_SECRETS_NAME}' is not valid JSON.")
-        st.info("The secret value must be a valid JSON string containing all key/value pairs.")
+    except Exception as e:
+        # Generic error catching for connectivity or parsing
+        logging.error(f"AWS Secrets Manager Error: {e}")
+        st.error("FATAL: Could not retrieve application secrets from AWS.")
+        st.error(f"Please check IAM permissions for the secret: {secret_name} in {region_name}.")
         return None
 
-
-# Call the function once and store the secrets in Streamlit's cache
-AWS_SECRETS = get_secrets_from_aws()
-if AWS_SECRETS is None:
-    # If secrets retrieval failed, use a placeholder and exit gracefully
-    # The functions that rely on it (fetch_organization_data, generate_recommendations)
-    # already handle the None case, so 'pass' is fine here.
-    st.error("Application configuration failed: Could not load secrets from AWS.")
-    pass
-
-
-# --- Utility Functions (No changes needed here) ---
+# --- Utility Functions ---
 def encode_image_to_base64(image_path):
     """Encodes an image file to a base64 string."""
     try:
@@ -181,7 +153,7 @@ def set_page_style(bg_image_path):
         h1, h2, h3, h4, h5, h6 {{ color: #FFFFFF !important; }}
         .stMarkdown p {{ color: #CBD5E1; }}
 
-        /* --- NEW: Page Header Container --- */
+        /* --- Page Header Container --- */
         .page-header-container {{
             background-color: rgba(26, 32, 44, 0.7);
             border-radius: 12px;
@@ -191,11 +163,11 @@ def set_page_style(bg_image_path):
         }}
         .page-header-container h1 {{
             margin-bottom: 0.5rem;
-            font-size: 2.5rem; /* Larger title font */
+            font-size: 2.5rem;
         }}
         .page-header-container h3 {{
             margin-top: 0;
-            color: #A0AEC0 !important; /* Lighter subtitle color */
+            color: #A0AEC0 !important;
             font-weight: 400;
         }}
 
@@ -307,25 +279,24 @@ def get_score_indicator_html(score):
         tier = "Strength"
     return f"<span class='score-indicator {css_class}'></span> {tier}"
 
-# --- Data Access (Updated to use the new AWS_SECRETS structure) ---
+# --- Data Access ---
 @st.cache_data
 def fetch_organization_data(user_email):
-    # Check if secrets were successfully loaded
-    if AWS_SECRETS is None or 'database' not in AWS_SECRETS:
-        st.error("Cannot connect to database: Secrets not available.")
+    """Fetches organization data using credentials from AWS Secrets Manager."""
+    secrets = get_aws_secrets()
+    if not secrets:
+        st.error("❌ Database connection failed: Could not load secrets from AWS.")
         return None, None
-        
-    db_config = AWS_SECRETS['database']
+    
     conn = None
     try:
-        # Use credentials from AWS Secrets Manager
-        conn = mysql.connector.connect(
-            host=db_config.get('host'),
-            database=db_config.get('database'),
-            user=db_config.get('user'),
-            password=db_config.get('password'),
-            port=db_config.get('port') # Use the fetched port
-        )
+        db_params = {
+            'host': secrets['DB_HOST'],
+            'database': secrets['DB_DATABASE'],
+            'user': secrets['DB_USER'],
+            'password': secrets['DB_PASSWORD']
+        }
+        conn = mysql.connector.connect(**db_params)
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT organisation_name FROM user_registration WHERE Email_Id = %s", (user_email,))
         user_org_info = cursor.fetchone()
@@ -342,50 +313,89 @@ def fetch_organization_data(user_email):
             st.warning(f"No users found for organization '{org_name}'.")
             return None, org_name
 
-        tables_and_db_cols = {
-            "Leadership": ["Leadership_avg"], "Empower": ["Empower_avg"],
-            "Sustainability": ["Sustainability_avg"], "CulturePulse": ["CulturePulse_avg"],
-            "Bonding": ["Bonding_avg"], "Influencers": ["Influencers_avg"]
-        }
-        all_latest_user_data = []
-
-        # Fetch the latest average score per category for every user in the organization
-        for table, cols in tables_and_db_cols.items():
-            query = f"""
-            SELECT {', '.join(cols)} FROM (
-                SELECT {', '.join(cols)}, ROW_NUMBER() OVER(PARTITION BY Email_Id ORDER BY ID DESC) as rn
-                FROM {table} WHERE Email_Id IN ({','.join(['%s'] * len(org_emails))})
-            ) ranked_data WHERE rn = 1;"""
-            cursor.execute(query, tuple(org_emails))
-            all_latest_user_data.extend(cursor.fetchall())
+        avg_cols = [
+            "Leadership_avg", "Influencers_avg", "Bonding_avg",
+            "CulturePulse_avg", "Sustainability_avg", "Empower_avg"
+        ]
+        placeholders = ','.join(['%s'] * len(org_emails))
+        
+        query = f"""
+            SELECT {', '.join(avg_cols)}
+            FROM (
+                SELECT *,
+                        ROW_NUMBER() OVER(PARTITION BY Email_ID ORDER BY id DESC) as rn
+                FROM Averages
+                WHERE Email_ID IN ({placeholders})
+            ) ranked_data
+            WHERE rn = 1;
+        """
+        cursor.execute(query, tuple(org_emails))
+        all_latest_user_data = cursor.fetchall()
 
         if not all_latest_user_data:
-            st.warning(f"No survey data found for organization '{org_name}'.")
+            st.warning(f"No survey data found for organization '{org_name}' in the Averages table.")
             return None, org_name
 
         df_combined = pd.DataFrame(all_latest_user_data)
+
+        # REFINED: Added robust data validation and clearer warnings
+        for col in avg_cols:
+            if col in df_combined.columns:
+                df_combined[col] = pd.to_numeric(df_combined[col], errors='coerce')
+        
+        # Check if all data is null after conversion, which causes the error
+        if df_combined[avg_cols].isnull().all().all():
+            st.warning(f"Found survey submissions for '{org_name}', but all average score columns are empty or contain non-numeric data in the 'Averages' table. Please check the data integrity.")
+            return None, org_name
+            
         org_averages = df_combined.mean(numeric_only=True).to_dict()
         org_data = {'Organization_Name': org_name, **org_averages}
         return org_data, org_name
+    except KeyError as e:
+        st.error(f"❌ Database error: The key {e} is missing from your AWS secret.")
+        return None, None
     except Error as err:
         st.error(f"❌ Database error: {err}")
-        st.info("Please ensure the database is running and the credentials from AWS Secrets Manager are correct.")
         return None, None
     finally:
         if conn and conn.is_connected(): conn.close()
 
-# --- Recommendation Generation (Updated to use new AWS_SECRETS structure) ---
+# ----------------------------------------------------------------------------------
+# --- REFINED: Recommendation Generation (Crucial for API Key Fix) ---
+# ----------------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def generate_recommendations(_category_name, average_score, questions_context):
-    # Check if secrets were successfully loaded
-    if AWS_SECRETS is None or 'gemini' not in AWS_SECRETS or not AWS_SECRETS['gemini']['api_key']:
-        st.warning("Gemini API key is not available in the configuration.")
-        return "Sorry, we were unable to generate recommendations. Gemini API key is missing."
-
+    """Generates recommendations using Gemini API key, ensuring a fresh key is used."""
+    
+    gemini_api_key = None
     try:
-        # Use API key from AWS Secrets Manager
-        genai.configure(api_key=AWS_SECRETS['gemini']['api_key'])
+        # **REFINEMENT:** Call the wrapped function to bypass the @st.cache_data decorator 
+        # on get_aws_secrets(). This forces a fresh fetch from AWS Secrets Manager 
+        # for the API key, preventing stale key issues.
+        all_secrets = get_aws_secrets.__wrapped__() 
+        
+        if not all_secrets:
+            st.error("Failed to generate recommendations: Could not load secrets from AWS.")
+            return "Sorry, we were unable to generate recommendations at this time."
+            
+        gemini_api_key = all_secrets.get("GEMINI_API_KEY")
+        
+        if not gemini_api_key:
+            raise KeyError("GEMINI_API_KEY")
+            
+    except KeyError:
+        st.error("API key configuration error: 'GEMINI_API_KEY' not found in AWS secrets.")
+        return "Sorry, we were unable to generate recommendations due to a configuration error."
+    except Exception as e:
+        st.error(f"An error occurred while fetching secrets for Gemini: {e}")
+        return "Sorry, we were unable to generate recommendations at this time. (Secret Fetch Error)"
+
+
+    # Configure and Generate Content
+    try:
+        genai.configure(api_key=gemini_api_key)
         model = genai.GenerativeModel(model_name=GEMINI_MODEL)
+        
         category_questions = questions_context.get(_category_name, {})
         question_details = "\n".join([f"- **{sub_cat}:** {question}" for sub_cat, question in category_questions.items()])
         
@@ -404,18 +414,17 @@ def generate_recommendations(_category_name, average_score, questions_context):
         return getattr(response, "text", "Could not generate text response from the model.")
         
     except Exception as e:
-        st.error(f"An error occurred while generating recommendations for {_category_name}: {e}")
-        return "Sorry, we were unable to generate recommendations at this time."
+        # Catch errors specifically from the API call (e.g., invalid key, rate limit)
+        st.error(f"An error occurred during Gemini API call for {_category_name}: {e}")
+        return "Sorry, we were unable to generate recommendations at this time. (Gemini API Call Failed)"
 
-# --- UI Rendering Functions (No changes needed here) ---
-
+# --- UI Rendering Functions ---
 def display_category_grid(category_scores, navigate_to):
-    """Displays a grid of clickable category cards using a stable HTML-based method."""
+    """Displays a grid of clickable category cards."""
     st.subheader("Performance Categories")
     st.markdown("Click on a category to view detailed, AI-powered recommendations.")
     st.write("") 
 
-    # Sort categories by score (lowest scores first)
     sorted_categories = sorted(category_scores.items(), key=lambda item: item[1])
     
     for i in range(0, len(sorted_categories), 3):
@@ -464,8 +473,8 @@ def display_recommendation_detail(category, score):
         """, unsafe_allow_html=True)
 
 # --- Main Page Function ---
-def recommendations_page(navigate_to=None, user_email=None):
-    """Renders the main recommendations page, switching between grid and detail view."""
+def recommendations_page(navigate_to=None, user_email=None, **kwargs):
+    """Renders the main recommendations page."""
     set_page_style(BG_IMAGE_PATH)
     
     if 'selected_category' not in st.session_state:
@@ -474,7 +483,6 @@ def recommendations_page(navigate_to=None, user_email=None):
     org_data, org_name = fetch_organization_data(user_email)
     display_logo_and_text(LOGO_IMAGE_PATH, org_name)
 
-    # Main heading is now inside its own styled container
     st.markdown(f"""
         <div class="page-header-container">
             <h1>Performance Enhancement Recommendations</h1>
@@ -515,7 +523,8 @@ if __name__ == "__main__":
     st.set_page_config(layout="wide", page_title="VClarifi Recommendations")
 
     if 'user_email' not in st.session_state:
-        st.session_state['user_email'] = 'admin_alpha@example.com'
+        # Example user email for testing
+        st.session_state['user_email'] = 'admin_alpha@example.com' 
     
     if 'page' not in st.session_state:
         st.session_state['page'] = 'Recommendations'
