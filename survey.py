@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%
 def survey(navigate_to, user_email, secrets):
     """
     Complete Streamlit function to administer the AACS survey with role-based views
-    (Admin Hub, Team Dashboard) and progress resumption.
+    (Admin Panel, Team Dashboard) and progress resumption.
     """
     # --- Process Passed-in Secrets ---
     try:
@@ -116,13 +116,11 @@ def survey(navigate_to, user_email, secrets):
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
     
-    # REFINED to match the new schema understanding
     def get_user_info(email):
         conn = get_db_connection()
         if not conn: return None
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # CORRECTED: Query only the user_registration table using the correct column name 'Email_Id'
                 cursor.execute("SELECT * FROM user_registration WHERE Email_Id = %s", (email,))
                 user = cursor.fetchone()
                 return user
@@ -134,7 +132,6 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return "Not Started"
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # CORRECTED: Use 'Email_Id' to match the schema
                 query = "SELECT status FROM submissions WHERE Email_Id = %s ORDER BY start_date DESC LIMIT 1"
                 cursor.execute(query, (email,))
                 result = cursor.fetchone()
@@ -142,13 +139,11 @@ def survey(navigate_to, user_email, secrets):
         finally:
             close_db_connection(conn)
 
-    # REFINED to match the new schema understanding
     def get_team_status(admin_email):
         conn = get_db_connection()
         if not conn: return []
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # Step 1: Get the list of team member emails from the mapping table
                 cursor.execute("SELECT team_member_email FROM admin_team_members WHERE admin_email = %s", (admin_email,))
                 member_emails_result = cursor.fetchall()
                 if not member_emails_result:
@@ -156,14 +151,11 @@ def survey(navigate_to, user_email, secrets):
                 
                 member_emails = [row['team_member_email'] for row in member_emails_result]
                 
-                # Step 2: Get details for those members from the user_registration table
-                # We use a format string for the IN clause placeholder
                 format_strings = ','.join(['%s'] * len(member_emails))
                 query = f"SELECT Email_Id, first_name, last_name FROM user_registration WHERE Email_Id IN ({format_strings})"
                 cursor.execute(query, tuple(member_emails))
                 members = cursor.fetchall()
                 
-                # Step 3: Get the status for each member
                 for member in members:
                     member['status'] = get_user_submission_status(member['Email_Id'])
                 return members
@@ -174,7 +166,6 @@ def survey(navigate_to, user_email, secrets):
         conn = get_db_connection()
         if not conn: return None, 0
         try:
-            # Step 1: Get the list of team member emails from the mapping table
             with conn.cursor(dictionary=True) as cursor:
                 cursor.execute("SELECT team_member_email FROM admin_team_members WHERE admin_email = %s", (admin_email,))
                 member_emails_result = cursor.fetchall()
@@ -182,7 +173,6 @@ def survey(navigate_to, user_email, secrets):
                 return None, 0
             member_emails = tuple(row['team_member_email'] for row in member_emails_result)
 
-            # Step 2: Get completed submission IDs for those team members
             format_strings = ','.join(['%s'] * len(member_emails))
             query = f"SELECT id FROM submissions WHERE Email_Id IN ({format_strings}) AND status = 'completed'"
             submission_ids_df = pd.read_sql(query, conn, params=member_emails)
@@ -194,7 +184,6 @@ def survey(navigate_to, user_email, secrets):
             sub_ids_tuple = tuple(sub_ids_list)
             sub_ids_sql = str(sub_ids_tuple) if len(sub_ids_tuple) > 1 else f"({sub_ids_tuple[0]})"
 
-            # Step 3: Fetch scores for those submissions
             align_df = pd.read_sql(f"SELECT * FROM alignment_scores WHERE submission_id IN {sub_ids_sql}", conn)
             agile_df = pd.read_sql(f"SELECT * FROM agility_scores WHERE submission_id IN {sub_ids_sql}", conn)
             cap_df = pd.read_sql(f"SELECT * FROM capability_scores WHERE submission_id IN {sub_ids_sql}", conn)
@@ -307,7 +296,6 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return
         try:
             with conn.cursor() as cursor:
-                # CORRECTED: Schema has Email_ID with capital D
                 query = f"INSERT INTO accs_category_completed (Email_ID, submission_id, `{domain_to_mark_completed}`) VALUES (%s, %s, TRUE) ON DUPLICATE KEY UPDATE `{domain_to_mark_completed}` = TRUE"
                 cursor.execute(query, (user_email_param, submission_id_param))
                 conn.commit()
@@ -322,7 +310,6 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return loaded_responses, completed_domains
         try:
             with conn.cursor(dictionary=True, buffered=True) as cursor:
-                # CORRECTED: Schema has Email_ID with capital D
                 cursor.execute("SELECT * FROM accs_category_completed WHERE Email_ID = %s AND submission_id = %s", (user_email_param, submission_id_param))
                 completion_data = cursor.fetchone()
                 if completion_data:
@@ -410,7 +397,8 @@ def survey(navigate_to, user_email, secrets):
                         
                         if len(st.session_state.saved_domains) == len(all_domain_keys):
                             update_submission_to_completed(sub_id)
-                            st.session_state.view = 'thank_you'
+                            # This will be caught by the main router on the next rerun
+                            st.session_state.view = 'thank_you' 
                         
                         st.session_state.selected_domain = None
                         st.rerun()
@@ -421,14 +409,21 @@ def survey(navigate_to, user_email, secrets):
         st.title("✅ Thank You!")
         st.subheader("Your submission has been recorded.")
         st.balloons()
-        st.success("Your team administrator will be notified. You can now safely close this window.")
+        # Admins see a button to their panel, members just see a final message.
+        if user_info.get('is_admin'):
+            st.success("As an administrator, you can now access your team's Admin Panel.")
+            if st.button("Go to Admin Panel"):
+                st.session_state.view = 'admin_panel'
+                st.rerun()
+        else:
+            st.success("Your team administrator will be notified. You can now safely close this window.")
 
-    def show_admin_hub(user_info):
-        st.title(f"👑 Admin Hub for {user_info.get('sports_team', 'Your Team')}")
+    def show_admin_panel(user_info):
+        st.title(f"👑 Admin Panel for {user_info.get('sports_team', 'Your Team')}")
         st.markdown("---")
 
         with st.spinner("Loading team status..."):
-            team_members = get_team_status(user_info.get('Email_Id')) # Use admin's email to find their team
+            team_members = get_team_status(user_info.get('Email_Id'))
         
         if not team_members:
             st.warning("No team members are assigned to you in the admin_team_members table.")
@@ -467,13 +462,13 @@ def survey(navigate_to, user_email, secrets):
 
     def show_team_dashboard(user_info):
         st.title(f"📈 Team Dashboard: {user_info.get('sports_team', 'Your Team')}")
-        if st.button("← Back to Admin Hub"):
-            st.session_state.view = 'admin_hub'
+        if st.button("← Back to Admin Panel"):
+            st.session_state.view = 'admin_panel'
             st.rerun()
         st.markdown("---")
 
         with st.spinner("Calculating team averages..."):
-            avg_scores, num_respondents = get_team_average_scores(user_info.get('Email_Id')) # Use admin's email
+            avg_scores, num_respondents = get_team_average_scores(user_info.get('Email_Id'))
 
         if not avg_scores:
             st.error("Could not retrieve team data."); return
@@ -528,16 +523,22 @@ def survey(navigate_to, user_email, secrets):
     if not user_info:
         st.error("Could not retrieve your user profile. Please contact support."); return
 
+    # REFINED ROUTER LOGIC
     if 'view' not in st.session_state:
         user_status = get_user_submission_status(user_email)
-        if user_info.get('is_admin'):
-            st.session_state.view = 'admin_hub'
-        elif user_status == 'completed':
+        is_admin = user_info.get('is_admin')
+
+        if is_admin and user_status == 'completed':
+            # An admin who has completed the survey goes to the Admin Panel
+            st.session_state.view = 'admin_panel'
+        elif not is_admin and user_status == 'completed':
+            # A non-admin who has completed goes to the Thank You page
             st.session_state.view = 'thank_you'
         else:
+            # Anyone who has not completed (admin or member) must take the survey
             st.session_state.view = 'survey'
 
-    view_map = {'admin_hub': show_admin_hub, 'team_dashboard': show_team_dashboard, 'survey': show_survey_view, 'thank_you': show_thank_you_view}
+    view_map = {'admin_panel': show_admin_panel, 'team_dashboard': show_team_dashboard, 'survey': show_survey_view, 'thank_you': show_thank_you_view}
     view_func = view_map.get(st.session_state.view)
     if view_func:
         if st.session_state.view == 'survey':
