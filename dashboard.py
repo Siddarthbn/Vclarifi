@@ -23,13 +23,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%
 
 # --- ROBUST PATH HANDLING ---
 LOGO_PATH = os.path.join("images", "VTARA.png")
-BG_IMAGE_PATH = os.path.join("images", "bg.jpg")
+BG_IMAGE_PATH = os.path.join("images", "background.jpg")
 
 # ==============================================================================
 # --- DATABASE & DATA FETCHING (Unchanged) ---
 # ==============================================================================
-# All data fetching functions (get_db_connection, fetch_aacs_dashboard_data, etc.)
-# are unchanged from the previous correct version. They are included here for completeness.
+# All data fetching functions are unchanged and included for completeness.
 
 def get_db_connection(secrets):
     if not secrets: st.error("❌ DB connection failed: Secrets not loaded."); return None
@@ -88,6 +87,7 @@ def fetch_aacs_dashboard_data(_user_email, secrets):
     finally:
         if conn and conn.is_connected(): conn.close()
 
+
 # ==============================================================================
 # --- UI, PLOTTING, AND DISPLAY FUNCTIONS ---
 # ==============================================================================
@@ -102,7 +102,7 @@ def set_background(image_path):
     if encoded_image:
         st.markdown(f"""
             <style>
-                /* REFINED: Apply background to the highest-level element */
+                /* REFINED: Apply background to the highest-level element (body) */
                 body {{
                     background-image: url('data:image/jpeg;base64,{encoded_image}');
                     background-size: cover;
@@ -110,14 +110,14 @@ def set_background(image_path):
                     background-repeat: no-repeat;
                     background-attachment: fixed;
                 }}
-                /* Make Streamlit's default backgrounds transparent */
-                [data-testid="stAppViewContainer"] > .main {{
+                /* Make Streamlit's default backgrounds transparent to let the body background show through */
+                [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer"] > .main {{
                     background: transparent;
                 }}
                 [data-testid="stHeader"], [data-testid="stToolbar"] {{
                     background: transparent;
                 }}
-                /* REFINED: This is now the SINGLE dark container for all content */
+                /* This is now the SINGLE dark container that holds all content */
                 .main .block-container {{
                     background-color: rgba(10, 20, 30, 0.9);
                     padding: 25px 40px;
@@ -127,18 +127,19 @@ def set_background(image_path):
                     margin: 2rem auto;
                     max-width: 95%;
                 }}
-                h1, h2, h3, h4, h5, label, p, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
-                .highlight-card p {{ margin-bottom: 0; }}
-                .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
+                /* General text styling for the container */
+                h1, h2, h3, h4, h5, p, label, .st-b3, .st-ag, .st-be, .stMetric * {{
+                    color: white !important;
+                }}
             </style>
         """, unsafe_allow_html=True)
 
-def display_header(title, logo_path, org_name):
-    # This function is now simplified as the main header is just text
+def display_header(title, org_name):
     st.markdown(f"<h1 style='text-align: center; color: white;'>{title}</h1>", unsafe_allow_html=True)
     st.markdown(f"<h3 style='text-align: center; color: #ccc; margin-top: -10px;'>{org_name or ''}</h3>", unsafe_allow_html=True)
     st.markdown("---")
 
+# --- All other plotting and display helper functions are unchanged ---
 def get_color_for_score(score):
     try:
         score = float(score)
@@ -214,6 +215,7 @@ def plot_score_distribution(df_all_scores, domains, benchmark):
         fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white', yaxis_title="Score", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
 
+
 # ==============================================================================
 # --- MAIN DASHBOARD FUNCTION ---
 # ==============================================================================
@@ -224,12 +226,12 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
 
     avg_scores, org_name, all_scores_df = fetch_aacs_dashboard_data(user_email, secrets)
     
+    # We now render the header outside the main container for a full-width effect
+    display_header("Team Performance Dashboard", org_name)
+
     if avg_scores is None or not avg_scores:
-        display_header("Team Performance Dashboard", LOGO_PATH, "N/A")
         st.warning("Dashboard data could not be loaded. Please ensure surveys have been completed by your team.")
         return
-
-    display_header("Team Performance Dashboard", LOGO_PATH, org_name)
 
     sub_vars_map = {
         "Alignment": ["CI", "TCS", "SCR"], "Agility": ["AV", "LLR", "CRI"],
@@ -245,7 +247,8 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     
     df_best, df_worst = get_performance_highlights(avg_scores, sub_vars_map, sub_abbr_to_full)
 
-    # --- Top Metrics & Summary Row ---
+    # --- All content below will be inside the single dark container ---
+    
     st.subheader("High-Level Summary")
     m1, m2 = st.columns([1, 2.5])
     with m1:
@@ -257,7 +260,6 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     
     st.markdown("---")
 
-    # --- Main Visuals Columns ---
     st.subheader("Performance Breakdown")
     col1, col2 = st.columns([1.5, 1])
     with col1:
@@ -267,16 +269,15 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
         if df_best is not None and not df_best.empty:
             st.markdown("<h6><span class='strength-icon'>✅</span> Top Strengths</h6>", unsafe_allow_html=True)
             for _, row in df_best.iterrows():
-                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+                st.markdown(f"<p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p>", unsafe_allow_html=True)
         
         if df_worst is not None and not df_worst.empty:
             st.markdown("<h6 style='margin-top: 15px;'><span class='focus-icon'>🎯</span> Areas for Focus</h6>", unsafe_allow_html=True)
             for _, row in df_worst.iterrows():
-                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+                st.markdown(f"<p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p>", unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # --- Detailed Sub-Domain & Distribution Analysis ---
     st.subheader("Detailed Analysis")
     tab1, tab2 = st.tabs(["Sub-Domain Drill-Down", "Score Distribution"])
     with tab1:
@@ -296,8 +297,8 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
 if __name__ == "__main__":
     mock_secrets = {
         "DB_HOST": "localhost",
-        "DB_USER": "your_user",
-        "DB_PASSWORD": "your_password",
+        "DB_USER": "your_db_user",
+        "DB_PASSWORD": "your_db_password",
         "DB_DATABASE": "Vclarifi",
     }
     if 'user_email' not in st.session_state:
