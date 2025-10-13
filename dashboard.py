@@ -67,7 +67,7 @@ def fetch_aacs_dashboard_data(_user_email, secrets):
             member_emails_result = cursor.fetchall()
 
         team_emails = [row['team_member_email'] for row in member_emails_result]
-        team_emails.append(_user_email) # Include the admin in the analysis
+        team_emails.append(_user_email)
         
         if not team_emails:
             return {}, org_name, pd.DataFrame()
@@ -89,17 +89,16 @@ def fetch_aacs_dashboard_data(_user_email, secrets):
         sub_ids_tuple = tuple(sub_ids_list)
         sub_ids_sql = str(sub_ids_tuple) if len(sub_ids_tuple) > 1 else f"({sub_ids_tuple[0]})"
         
-        # REFINED: Select specific columns to avoid duplicate 'id' columns from each table
         align_df = pd.read_sql(f"SELECT submission_id, CI, TCS, SCR, Alignment_score FROM alignment_scores WHERE submission_id IN {sub_ids_sql}", conn)
         agile_df = pd.read_sql(f"SELECT submission_id, AV, LLR, CRI, Agility_score FROM agility_scores WHERE submission_id IN {sub_ids_sql}", conn)
         cap_df = pd.read_sql(f"SELECT submission_id, SIS, CDI, EER, Capability_score FROM capability_scores WHERE submission_id IN {sub_ids_sql}", conn)
         sustain_df = pd.read_sql(f"SELECT submission_id, WBS, ECI, RCR, Sustainability_score FROM sustainability_scores WHERE submission_id IN {sub_ids_sql}", conn)
         pi_df = pd.read_sql(f"SELECT id as submission_id, pi_score FROM submissions WHERE id IN {sub_ids_sql}", conn)
 
-        # Merge all dataframes on the common 'submission_id' column
-        all_scores_df = align_df
-        for df in [agile_df, cap_df, sustain_df, pi_df]:
-            all_scores_df = pd.merge(all_scores_df, df, on="submission_id", how="outer")
+        all_scores_df = pd.merge(align_df, agile_df, on="submission_id", how="outer")
+        all_scores_df = pd.merge(all_scores_df, cap_df, on="submission_id", how="outer")
+        all_scores_df = pd.merge(all_scores_df, sustain_df, on="submission_id", how="outer")
+        all_scores_df = pd.merge(all_scores_df, pi_df, on="submission_id", how="outer")
         
         avg_scores = all_scores_df.mean(numeric_only=True).drop(['submission_id'], errors='ignore').round(2).to_dict()
         avg_scores['respondent_count'] = len(submission_ids_df)
@@ -132,14 +131,14 @@ def set_background(image_path):
                 }}
                 [data-testid="stHeader"], [data-testid="stToolbar"] {{ background: rgba(0,0,0,0); }}
                 .card-container {{
-                    background-color: rgba(10, 20, 30, 0.7);
+                    background-color: rgba(10, 20, 30, 0.75);
                     padding: 25px;
                     border-radius: 15px;
                     box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-                    backdrop-filter: blur(4px);
-                    -webkit-backdrop-filter: blur(4px);
+                    backdrop-filter: blur(5px);
+                    -webkit-backdrop-filter: blur(5px);
                     border: 1px solid rgba(255, 255, 255, 0.18);
-                    margin-bottom: 20px; /* Add margin to separate containers */
+                    margin-bottom: 20px;
                 }}
                 h1, h2, h3, h4, h5, label, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
                 .main .block-container {{ padding: 2rem 1.5rem; }}
@@ -172,105 +171,79 @@ def get_color_for_score(score):
         else: return '#2ca02c'           # Green
     except (ValueError, TypeError): return '#808080' # Grey
 
-def plot_radar_chart(scores_data, domains):
-    """Generates a radar chart for the 4 main AACS domain scores."""
-    domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domains]
-    fig = go.Figure()
-    fig.add_trace(go.Scatterpolar(
-        r=domain_scores + [domain_scores[0]], # Close the loop
-        theta=domains + [domains[0]],
-        fill='toself',
-        marker_color='rgba(0, 123, 255, 0.7)',
-        name='Team Average'
-    ))
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(visible=True, range=[0, 100], color='white', gridcolor='rgba(255,255,255,0.3)'),
-            angularaxis=dict(color='white', linecolor='rgba(255,255,255,0.3)')
-        ),
-        showlegend=False,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font_color='white',
-        title='Holistic Performance Overview'
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
 def plot_domain_comparison_bar_chart(scores_data, domains, benchmark):
-    """Generates a bar chart for the 4 main AACS domain scores with benchmark."""
-    domain_names = list(domains.keys())
-    domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domains]
+    domain_names = list(domains)
+    domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domain_names]
     
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=domain_names, 
-        y=domain_scores, 
+        x=domain_names, y=domain_scores, 
         marker_color=[get_color_for_score(s) for s in domain_scores],
         text=[f'{v:.1f}' for v in domain_scores],
-        textposition='outside', 
-        textfont_color='white'
+        textposition='outside', textfont_color='white'
     ))
     fig.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(domain_names)-0.5, y1=benchmark,
-                  line=dict(color="white", dash="dash", width=2),
-                  name='Benchmark')
+                  line=dict(color="white", dash="dash", width=2), name='Benchmark')
     
     fig.update_layout(
-        title_text="Domain Performance Comparison", 
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(255,255,255,0.1)', 
-        font_color='white', 
+        title_text="Domain Performance Comparison", paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(255,255,255,0.1)', font_color='white', 
         yaxis=dict(range=[0, 105], gridcolor='rgba(255,255,255,0.1)'),
         xaxis=dict(tickangle=-45)
     )
     st.plotly_chart(fig, use_container_width=True)
 
-def plot_sub_domain_charts(scores_data, sub_vars):
-    """Generates donut charts for sub-domains."""
+def plot_sub_domain_charts(scores_data, sub_vars, sub_abbr_to_full):
+    """Generates donut charts for sub-domains using full names."""
     cols = st.columns(len(sub_vars))
-    for i, sub in enumerate(sub_vars):
+    for i, sub_abbr in enumerate(sub_vars):
         with cols[i]:
-            score = scores_data.get(sub, 0.0)
+            score = scores_data.get(sub_abbr, 0.0)
+            full_name = sub_abbr_to_full.get(sub_abbr, sub_abbr)
             fig = go.Figure(go.Pie(
                 values=[score, 100 - score], hole=.7,
                 marker_colors=[get_color_for_score(score), 'rgba(255,255,255,0.1)'],
                 sort=False, textinfo='none'
             ))
             fig.update_layout(
-                title_text=sub, annotations=[dict(text=f'{score:.1f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')],
+                title_text=full_name, annotations=[dict(text=f'{score:.1f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')],
                 showlegend=False, height=250, margin=dict(t=40, b=0, l=0, r=0),
                 paper_bgcolor='rgba(0,0,0,0)', font_color='white'
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-def get_performance_highlights(org_data, sub_vars_map):
-    all_scores = [{'Sub-Domain': sub, 'Domain': main, 'Score': float(org_data.get(sub, 0.0))} 
-                  for main, subs in sub_vars_map.items() for sub in subs if sub in org_data and org_data.get(sub) is not None]
+def get_performance_highlights(org_data, sub_vars_map, sub_abbr_to_full):
+    all_scores = []
+    for main_cat, subs in sub_vars_map.items():
+        for sub_abbr in subs:
+            score = org_data.get(sub_abbr)
+            if score is not None:
+                full_name = sub_abbr_to_full.get(sub_abbr, sub_abbr)
+                all_scores.append({'Sub-Domain': full_name, 'Score': float(score)})
     
-    if not all_scores:
-        return None, None
-    
+    if not all_scores: return None, None
     df = pd.DataFrame(all_scores)
-    df_best = df.sort_values(by="Score", ascending=False).head(3)
-    df_worst = df.sort_values(by="Score", ascending=True).head(3)
-    return df_best, df_worst
+    return df.sort_values(by="Score", ascending=False).head(3), df.sort_values(by="Score", ascending=True).head(3)
 
-def generate_dynamic_summary(pi_score, benchmark, df_best, df_worst):
-    summary = f"The team's **Overall Performance Index (PI) is {pi_score:.1f}**"
+def generate_dynamic_summary(pi_score, benchmark, avg_scores, domains):
+    domain_scores = {domain: avg_scores.get(f'{domain}_score', 0.0) for domain in domains}
     
+    # Sort domains by score
+    sorted_domains = sorted(domain_scores.items(), key=lambda item: item[1])
+    
+    lowest_domain, lowest_score = sorted_domains[0]
+    highest_domain, highest_score = sorted_domains[-1]
+    
+    summary = f"The team's **Overall Performance Index (PI) is {pi_score:.1f}**. "
     if pi_score >= benchmark:
-        summary += ", indicating a strong performance **above the benchmark**."
+        summary += "This indicates a strong overall performance, exceeding the benchmark. "
     else:
-        summary += ", which is **below the benchmark** and suggests areas for strategic improvement."
+        summary += "This is below the benchmark and suggests opportunities for strategic growth. "
 
-    if df_best is not None and not df_best.empty:
-        top_strength = df_best.iloc[0]
-        summary += f" A significant strength lies in **{top_strength['Sub-Domain']}** (score: {top_strength['Score']:.1f}), showing a solid foundation."
+    summary += f"The highest-scoring domain is **{highest_domain}** (score: {highest_score:.1f}), representing a key organizational strength. "
+    summary += f"Conversely, the primary area for development is **{lowest_domain}** (score: {lowest_score:.1f}). "
+    summary += "Focusing on this domain can help elevate overall team effectiveness."
     
-    if df_worst is not None and not df_worst.empty:
-        top_focus = df_worst.iloc[0]
-        summary += f" For targeted development, **{top_focus['Sub-Domain']}** (score: {top_focus['Score']:.1f}) is identified as a primary area for improvement."
-
-    summary += " Continuous focus on these insights can further enhance team effectiveness."
     return summary
 
 def plot_score_distribution(df_all_scores, domains, benchmark):
@@ -299,7 +272,7 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     avg_scores, org_name, all_scores_df = fetch_aacs_dashboard_data(user_email, secrets)
     
     if avg_scores is None or not avg_scores:
-        st.warning("Dashboard data could not be loaded. Please ensure surveys have been completed by your team and the database is accessible.")
+        st.warning("Dashboard data could not be loaded. Please ensure surveys have been completed by your team.")
         return
 
     display_header("Team Performance Dashboard", LOGO_PATH, org_name)
@@ -308,40 +281,36 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
         "Alignment": ["CI", "TCS", "SCR"], "Agility": ["AV", "LLR", "CRI"],
         "Capability": ["SIS", "CDI", "EER"], "Sustainability": ["WBS", "ECI", "RCR"]
     }
+    sub_abbr_to_full = {
+        "CI": "Communicated Intent", "TCS": "Trust & Support", "SCR": "Strategy & Coherence",
+        "AV": "Antennae & Vigilance", "LLR": "Learning & Responding", "CRI": "Challenge & Interpretation",
+        "SIS": "Systems & Integration", "CDI": "Competency Development", "EER": "Execution & Effectiveness",
+        "WBS": "Wellbeing & Balance", "ECI": "Ethics & Integrity", "RCR": "Resilience & Rebound"
+    }
     benchmark = 75.0
     
-    df_best, df_worst = get_performance_highlights(avg_scores, sub_vars_map)
+    df_best, df_worst = get_performance_highlights(avg_scores, sub_vars_map, sub_abbr_to_full)
 
-    # --- Top Metrics Row ---
+    # --- Top Metrics & Summary Row ---
     with st.container():
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        m1, m2, m3, m4 = st.columns(4)
-        pi_score = avg_scores.get('pi_score', 0)
-        m1.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
-        m2.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
-        if df_best is not None and not df_best.empty:
-            m3.metric("Top Performing Area", df_best.iloc[0]['Sub-Domain'], f"Score: {df_best.iloc[0]['Score']:.1f}")
-        if df_worst is not None and not df_worst.empty:
-            m4.metric("Area for Focus", df_worst.iloc[0]['Sub-Domain'], f"Score: {df_worst.iloc[0]['Score']:.1f}")
+        m1, m2 = st.columns([1, 2.5])
+        with m1:
+            pi_score = avg_scores.get('pi_score', 0)
+            st.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
+            st.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
+        with m2:
+            st.subheader("Performance Summary")
+            st.markdown(generate_dynamic_summary(pi_score, benchmark, avg_scores, sub_vars_map.keys()))
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Performance Summary and Overview Plots ---
-    col1, col2 = st.columns([2, 1])
+    # --- Main Visuals Columns ---
+    col1, col2 = st.columns([1.5, 1])
 
     with col1:
         with st.container():
             st.markdown('<div class="card-container">', unsafe_allow_html=True)
-            st.subheader("Performance Summary")
-            st.markdown(generate_dynamic_summary(pi_score, benchmark, df_best, df_worst))
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with st.container():
-            st.markdown('<div class="card-container">', unsafe_allow_html=True)
-            col1_1, col1_2 = st.columns(2)
-            with col1_1:
-                plot_radar_chart(avg_scores, list(sub_vars_map.keys()))
-            with col1_2:
-                plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
+            plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
             st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
@@ -359,21 +328,18 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
                     st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Detailed Sub-Domain Analysis ---
+    # --- Detailed Sub-Domain & Distribution Analysis ---
     with st.container():
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.subheader("Detailed Sub-Domain Analysis")
-        tabs = st.tabs(list(sub_vars_map.keys()))
-        for i, (domain, sub_domains) in enumerate(sub_vars_map.items()):
-            with tabs[i]:
-                plot_sub_domain_charts(avg_scores, sub_domains)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- Score Distribution ---
-    with st.container():
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        if all_scores_df is not None and not all_scores_df.empty:
-            plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
+        tab1, tab2 = st.tabs(["Sub-Domain Drill-Down", "Score Distribution"])
+        with tab1:
+            st.subheader("Detailed Sub-Domain Analysis")
+            category = st.selectbox("Select Domain to Explore", list(sub_vars_map.keys()))
+            if category:
+                plot_sub_domain_charts(avg_scores, sub_vars_map[category], sub_abbr_to_full)
+        with tab2:
+            if all_scores_df is not None and not all_scores_df.empty:
+                plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
