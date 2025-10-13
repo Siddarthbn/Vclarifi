@@ -104,7 +104,7 @@ def survey(navigate_to, user_email, secrets):
     }
     all_domain_keys = list(survey_questions.keys())
     question_to_sub_domain = {q_id: sub_domain for sub_domain, q_list in sub_index_mapping.items() for q_id in q_list}
-
+    
     # --- Database Interaction Functions ---
     def get_db_connection():
         try:
@@ -293,7 +293,7 @@ def survey(navigate_to, user_email, secrets):
         try:
             with conn.cursor() as cursor:
                 # CORRECTED: Schema has Email_ID with capital D
-                query = f"INSERT INTO aacs_Category_Completed (Email_ID, submission_id, `{domain_to_mark_completed}`) VALUES (%s, %s, TRUE) ON DUPLICATE KEY UPDATE `{domain_to_mark_completed}` = TRUE"
+                query = f"INSERT INTO accs_category_completed (Email_ID, submission_id, `{domain_to_mark_completed}`) VALUES (%s, %s, TRUE) ON DUPLICATE KEY UPDATE `{domain_to_mark_completed}` = TRUE"
                 cursor.execute(query, (user_email_param, submission_id_param))
                 conn.commit()
         finally:
@@ -308,7 +308,7 @@ def survey(navigate_to, user_email, secrets):
         try:
             with conn.cursor(dictionary=True, buffered=True) as cursor:
                 # CORRECTED: Schema has Email_ID with capital D
-                cursor.execute("SELECT * FROM aacs_Category_Completed WHERE Email_ID = %s AND submission_id = %s", (user_email_param, submission_id_param))
+                cursor.execute("SELECT * FROM accs_category_completed WHERE Email_ID = %s AND submission_id = %s", (user_email_param, submission_id_param))
                 completion_data = cursor.fetchone()
                 if completion_data:
                     for domain in all_domain_keys:
@@ -448,6 +448,7 @@ def survey(navigate_to, user_email, secrets):
                 admin_name = f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip()
                 for member in selected_to_remind:
                     member_name = f"{member.get('first_name', '')} {member.get('last_name', '')}".strip()
+                    # CORRECTED: Using 'Email_Id' key which is present in the dictionary
                     send_reminder_email(member['Email_Id'], member_name, admin_name, user_info.get('sports_team'))
 
     def show_team_dashboard(user_info):
