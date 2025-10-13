@@ -135,27 +135,25 @@ def set_background(image_path):
                 [data-testid="stHeader"], [data-testid="stToolbar"] {{
                     background: rgba(0,0,0,0);
                 }}
-                /* This is the main container that holds all the content */
-                .main .block-container {{
+                /* REFINED: Style for individual dark containers */
+                .card {{
                     background-color: rgba(10, 20, 30, 0.85);
-                    padding: 25px 40px;
+                    padding: 25px;
                     border-radius: 15px;
                     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
                     backdrop-filter: blur(5px);
                     -webkit-backdrop-filter: blur(5px);
                     border: 1px solid rgba(255, 255, 255, 0.18);
-                    margin: 2rem auto;
-                    max-width: 95%;
+                    margin-bottom: 20px;
+                }}
+                .main .block-container {{
+                    padding: 1rem 1.5rem; /* Reduce padding to give cards more space */
                 }}
                 h1, h2, h3, h4, h5, label, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
                 .dashboard-header {{
                     background-color: rgba(0,0,0,0.8); color: white; padding: 20px 30px; border-radius: 10px;
                     margin-bottom: 30px; font-size: 2.5em; font-weight: bold;
                     display: flex; justify-content: space-between; align-items: center;
-                }}
-                .highlight-card {{
-                    background-color: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 8px;
-                    border: 1px solid rgba(255, 255, 255, 0.2); margin-bottom: 10px;
                 }}
                 .highlight-card p {{ color: white !important; margin-bottom: 0; }}
                 .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
@@ -180,22 +178,20 @@ def get_color_for_score(score):
 def plot_domain_comparison_bar_chart(scores_data, domains, benchmark):
     domain_names = list(domains)
     domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domain_names]
-    
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=domain_names, y=domain_scores, 
+    fig = go.Figure(go.Bar(
+        x=domain_scores, y=domain_names, 
+        orientation='h',
         marker_color=[get_color_for_score(s) for s in domain_scores],
         text=[f'{v:.1f}' for v in domain_scores],
-        textposition='outside', textfont_color='white'
+        textposition='outside'
     ))
-    fig.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(domain_names)-0.5, y1=benchmark,
-                  line=dict(color="white", dash="dash", width=2), name='Benchmark')
-    
+    fig.add_vline(x=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark")
     fig.update_layout(
-        title_text="Domain Performance Comparison", paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(255,255,255,0.1)', font_color='white', 
-        yaxis=dict(range=[0, 105], gridcolor='rgba(255,255,255,0.1)'),
-        xaxis=dict(tickangle=-45)
+        title_text="Domain Performance vs Benchmark", paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)', font_color='white', 
+        xaxis=dict(range=[0, 105], gridcolor='rgba(255,255,255,0.2)'),
+        yaxis=dict(autorange="reversed"),
+        margin=dict(l=120)
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -208,7 +204,7 @@ def plot_sub_domain_charts(scores_data, sub_vars, sub_abbr_to_full):
             fig = go.Figure(go.Pie(
                 values=[score, 100 - score], hole=.7,
                 marker_colors=[get_color_for_score(score), 'rgba(255,255,255,0.1)'],
-                sort=False, textinfo='none'
+                sort=False, textinfo='none', direction='clockwise'
             ))
             fig.update_layout(
                 title_text=full_name, annotations=[dict(text=f'{score:.1f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')],
@@ -237,11 +233,11 @@ def generate_dynamic_summary(pi_score, benchmark, avg_scores, domains):
         summary += "This is below the benchmark and suggests opportunities for strategic growth. "
 
     summary += f"The highest-scoring domain is **{highest_domain}** (score: {highest_score:.1f}), representing a key organizational strength. "
-    summary += f"Conversely, the primary area for development is **{lowest_domain}** (score: {lowest_score:.1f}). "
+    summary += f"Conversely, the primary area for development is **{lowest_domain}** (score: {lowest_score:.1f})."
     return summary
 
 def plot_score_distribution(df_all_scores, domains, benchmark):
-    selected_domain = st.selectbox("Select a Domain to see score distribution:", list(domains.keys()), key="dist_domain_select")
+    selected_domain = st.selectbox("Select a Domain:", list(domains.keys()), key="dist_domain_select")
     score_col = f"{selected_domain}_score"
     if score_col in df_all_scores.columns:
         fig = px.box(df_all_scores, y=score_col, title=f"Score Distribution for {selected_domain}", points="all", color_discrete_sequence=['#007BFF'])
@@ -280,6 +276,7 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     df_best, df_worst = get_performance_highlights(avg_scores, sub_vars_map, sub_abbr_to_full)
 
     # --- Top Metrics & Summary Row ---
+    st.markdown('<div class="card">', unsafe_allow_html=True)
     m1, m2 = st.columns([1, 2.5])
     with m1:
         pi_score = avg_scores.get('pi_score', 0)
@@ -288,10 +285,10 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     with m2:
         st.subheader("Performance Summary")
         st.markdown(generate_dynamic_summary(pi_score, benchmark, avg_scores, sub_vars_map.keys()))
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown("---")
-
     # --- Main Visuals Columns ---
+    st.markdown('<div class="card">', unsafe_allow_html=True)
     col1, col2 = st.columns([1.5, 1])
     with col1:
         plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
@@ -306,10 +303,10 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
             st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
             for _, row in df_worst.iterrows():
                 st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
-
-    st.markdown("---")
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Detailed Sub-Domain & Distribution Analysis ---
+    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("Detailed Analysis")
     tab1, tab2 = st.tabs(["Sub-Domain Drill-Down", "Score Distribution"])
     with tab1:
@@ -321,6 +318,7 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
         st.write("Analyze the range and variance of scores across team members for each domain.")
         if all_scores_df is not None and not all_scores_df.empty:
             plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
 # --- SCRIPT EXECUTION ---
