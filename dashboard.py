@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%
 
 # --- ROBUST PATH HANDLING ---
 LOGO_PATH = os.path.join("images", "VTARA.png")
-BG_IMAGE_PATH = os.path.join("images", "background.jpg")
+BG_IMAGE_PATH = os.path.join("images", "bg.jpg")
 
 # ==============================================================================
 # --- DATABASE & DATA FETCHING (Unchanged) ---
