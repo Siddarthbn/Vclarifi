@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # --- Configuration ---
 BG_IMAGE_PATH = "images/background.jpg"
 LOGO_IMAGE_PATH = "images/VTARA.png"
-GEMINI_MODEL = "gemini-1.5-flash" 
+GEMINI_MODEL = "gemini-2.5-flash" 
 
 # --- AWS Secrets Manager Configuration ---
 SECRET_NAME = "production/vclarifi/secrets"
