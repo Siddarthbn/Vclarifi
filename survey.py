@@ -2,7 +2,6 @@ import streamlit as st
 import base64
 import mysql.connector
 from mysql.connector import Error
-from datetime import datetime
 import numpy as np
 import logging
 import pandas as pd
@@ -20,36 +19,27 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%
 # ---------- MAIN SURVEY FUNCTION ----------
 def survey(navigate_to, user_email, secrets):
     """
-    Complete Streamlit function to administer the AACS survey.
+    Complete Streamlit function to administer the AACS survey with role-based views
+    (Admin Hub, Team Dashboard) and progress resumption.
     """
     # --- Process Passed-in Secrets ---
     try:
-        if secrets:
-            DB_HOST = secrets['DB_HOST']
-            DB_USER = secrets['DB_USER']
-            DB_PASSWORD = secrets['DB_PASSWORD']
-            DB_DATABASE = "Vclarifi"  # Assuming the same database
-            CONFIG_LOADED_SUCCESSFULLY = True
-            logging.info("Configuration secrets successfully processed.")
-        else:
-            raise ValueError("Received an empty secrets object.")
+        DB_HOST = secrets['DB_HOST']
+        DB_USER = secrets['DB_USER']
+        DB_PASSWORD = secrets['DB_PASSWORD']
+        DB_DATABASE = "Vclarifi"
+        CONFIG_LOADED_SUCCESSFULLY = True
     except (KeyError, ValueError) as e:
-        logging.critical(f"FATAL: Could not read secrets passed into function. Check keys. Error: {e}")
-        DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
-        CONFIG_LOADED_SUCCESSFULLY = False
-
-    # --- Initial Configuration Check ---
-    if not CONFIG_LOADED_SUCCESSFULLY:
-        st.error("Application is critically misconfigured. Cannot initialize survey. Please contact an administrator.")
+        logging.critical(f"FATAL: Could not read secrets. Error: {e}")
+        st.error("Application is critically misconfigured. Please contact an administrator.")
         return
 
     # --- Paths & Constants ---
     bg_path = "images/background.jpg"
     logo_path = "images/VTARA.png"
 
-    # --- UI Helper Functions ---
+    # --- UI & Email Helper Functions ---
     def set_background(image_path):
-        """Sets the app background to cover the entire screen."""
         try:
             with open(image_path, "rb") as img_file:
                 encoded = base64.b64encode(img_file.read()).decode()
@@ -72,17 +62,14 @@ def survey(navigate_to, user_email, secrets):
             .category-container {{ border: 2px solid transparent; border-radius: 10px; padding: 10px; margin-bottom: 10px; background-color: rgba(0,0,0,0.3); transition: background-color 0.3s ease, border-color 0.3s ease; }}
             .category-container.completed {{ background-color: rgba(0, 123, 255, 0.2) !important; border: 2px solid #007BFF; }}
             .category-container div, .category-container p, .category-container label, .stMarkdown > p, div[data-testid="stRadio"] label span, h4, .stMetric {{ color: white !important; }}
-            .stMetric .st-emotion-cache-1g8sfav {{ color: white !important; }} /* Metric label */
-            .stMetric .st-emotion-cache-nohb39 {{ color: white !important; }} /* Metric value */
+            .stMetric .st-emotion-cache-1g8sfav {{ color: white !important; }}
+            .stMetric .st-emotion-cache-nohb39 {{ color: white !important; }}
             .stCaption {{ color: rgba(255,255,255,0.9) !important; text-align: center; }}
             </style>""", unsafe_allow_html=True)
         except FileNotFoundError:
             st.warning(f"Background image not found: {image_path}")
-        except Exception as e:
-            st.error(f"Error setting background: {e}")
 
     def display_branding_and_logout_placeholder(logo_path_param):
-        """Displays the branding logo."""
         try:
             with open(logo_path_param, "rb") as logo_file_handle:
                 logo_encoded = base64.b64encode(logo_file_handle.read()).decode()
@@ -94,10 +81,7 @@ def survey(navigate_to, user_email, secrets):
                 """, unsafe_allow_html=True)
         except FileNotFoundError:
             st.warning(f"Logo image not found: {logo_path_param}")
-        except Exception as e:
-            st.error(f"Error displaying logo: {e}")
 
-    # --- NEW: Email Sending Utility for Reminders ---
     def send_reminder_email(recipient_email, recipient_name, admin_name, team_name):
         subject = f"Reminder: Please Complete the AACS Survey for {team_name}"
         body = f"Hi {recipient_name},\n\nThis is a friendly reminder from your team administrator, {admin_name}, to complete the AACS survey for {team_name}.\n\nYour participation is crucial for our team's assessment and development."
@@ -105,10 +89,7 @@ def survey(navigate_to, user_email, secrets):
         st.toast(f"Reminder sent to {recipient_name}!", icon="📧")
 
     # --- AACS SURVEY DEFINITION ---
-    likert_options = [
-        "Select", "1: Strongly Disagree", "2: Disagree", "3: Somewhat Disagree",
-        "4: Neutral", "5: Somewhat Agree", "6: Agree", "7: Strongly Agree"
-    ]
+    likert_options = ["Select", "1: Strongly Disagree", "2: Disagree", "3: Somewhat Disagree", "4: Neutral", "5: Somewhat Agree", "6: Agree", "7: Strongly Agree"]
     survey_questions = {
         "Alignment": {"AACS1": "Our organisational goals are clearly communicated across all levels.", "AACS2": "Everyone understands how their role contributes to the wider mission.", "AACS3": "Strategic priorities are consistent and rarely change without explanation.", "AACS4": "Decision-making criteria are transparent.", "AACS5": "Leaders and staff behave consistently with our stated values.", "AACS6": "People can challenge ideas without fear of reprisal.", "AACS7": "We resolve disagreements constructively and fairly.", "AACS8": "Long-term goals and day-to-day operations are well aligned.", "AACS9": "We maintain focus even when external pressures rise.", "AACS10": "Partnerships and sponsorships reinforce our strategic direction."},
         "Agility": {"AACS11": "We identify and act on new opportunities quickly.", "AACS12": "Teams can pivot direction when conditions change.", "AACS13": "We review assumptions regularly and adjust plans as needed.", "AACS14": "Lessons from past projects are captured and applied.", "AACS15": "Mistakes are treated as learning opportunities.", "AACS16": "Feedback from stakeholders leads to visible improvements.", "AACS17": "Technology upgrades are adopted smoothly.", "AACS18": "Decision cycles are fast without sacrificing quality.", "AACS19": "We anticipate future trends rather than react to them.", "AACS20": "Cross-functional collaboration enables faster response."},
@@ -129,31 +110,29 @@ def survey(navigate_to, user_email, secrets):
         try:
             return mysql.connector.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_DATABASE)
         except Error as e:
-            st.error(f"Failed to connect to the database: {e}")
+            st.error(f"DB Connection Error: {e}")
             return None
 
     def close_db_connection(conn, cursor=None):
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
-
-    # --- REFINED & NEW Database Functions ---
+    
     def get_user_info(email):
         conn = get_db_connection()
         if not conn: return None
         try:
             with conn.cursor(dictionary=True) as cursor:
-                cursor.execute("SELECT first_name, last_name, organisation_name, sports_team, is_admin FROM admin_team_members WHERE Email_Id = %s", (email,))
+                cursor.execute("SELECT * FROM admin_team_members WHERE Email_Id = %s", (email,))
                 user = cursor.fetchone()
-                if user:
-                    return user
-                cursor.execute("SELECT first_name, last_name, organisation_name, sports_team, is_admin FROM user_registration WHERE Email_Id = %s", (email,))
+                if user: return user
+                cursor.execute("SELECT * FROM user_registration WHERE Email_Id = %s", (email,))
                 return cursor.fetchone()
         finally:
             close_db_connection(conn)
     
     def get_user_submission_status(email):
         conn = get_db_connection()
-        if not conn: return None
+        if not conn: return "Not Started"
         try:
             with conn.cursor(dictionary=True) as cursor:
                 query = "SELECT status FROM submissions WHERE Email_Id = %s ORDER BY start_date DESC LIMIT 1"
@@ -190,28 +169,28 @@ def survey(navigate_to, user_email, secrets):
             if submission_ids_df.empty:
                 return None, 0
             
-            sub_ids = tuple(submission_ids_df['id'].tolist())
-            if len(sub_ids) == 1: # Add a dummy value to avoid SQL syntax error for single-item tuple
-                sub_ids = f"({sub_ids[0]})"
+            sub_ids_list = submission_ids_df['id'].tolist()
+            sub_ids_tuple = tuple(sub_ids_list)
             
-            align_df = pd.read_sql(f"SELECT * FROM alignment_scores WHERE submission_id IN {sub_ids}", conn)
-            agile_df = pd.read_sql(f"SELECT * FROM agility_scores WHERE submission_id IN {sub_ids}", conn)
-            cap_df = pd.read_sql(f"SELECT * FROM capability_scores WHERE submission_id IN {sub_ids}", conn)
-            sustain_df = pd.read_sql(f"SELECT * FROM sustainability_scores WHERE submission_id IN {sub_ids}", conn)
-            pi_df = pd.read_sql(f"SELECT pi_score FROM submissions WHERE id IN {sub_ids}", conn)
+            sub_ids_sql = str(sub_ids_tuple) if len(sub_ids_tuple) > 1 else f"({sub_ids_tuple[0]})"
+
+            align_df = pd.read_sql(f"SELECT * FROM alignment_scores WHERE submission_id IN {sub_ids_sql}", conn)
+            agile_df = pd.read_sql(f"SELECT * FROM agility_scores WHERE submission_id IN {sub_ids_sql}", conn)
+            cap_df = pd.read_sql(f"SELECT * FROM capability_scores WHERE submission_id IN {sub_ids_sql}", conn)
+            sustain_df = pd.read_sql(f"SELECT * FROM sustainability_scores WHERE submission_id IN {sub_ids_sql}", conn)
+            pi_df = pd.read_sql(f"SELECT pi_score FROM submissions WHERE id IN {sub_ids_sql}", conn)
 
             avg_scores = {}
-            avg_scores.update(align_df.mean().drop('id', errors='ignore').to_dict())
-            avg_scores.update(agile_df.mean().drop('id', errors='ignore').to_dict())
-            avg_scores.update(cap_df.mean().drop('id', errors='ignore').to_dict())
-            avg_scores.update(sustain_df.mean().drop('id', errors='ignore').to_dict())
+            avg_scores.update(align_df.mean(numeric_only=True).drop(['id', 'submission_id'], errors='ignore').to_dict())
+            avg_scores.update(agile_df.mean(numeric_only=True).drop(['id', 'submission_id'], errors='ignore').to_dict())
+            avg_scores.update(cap_df.mean(numeric_only=True).drop(['id', 'submission_id'], errors='ignore').to_dict())
+            avg_scores.update(sustain_df.mean(numeric_only=True).drop(['id', 'submission_id'], errors='ignore').to_dict())
             avg_scores['pi_score'] = pi_df['pi_score'].mean()
             
             return avg_scores, len(submission_ids_df)
         finally:
             close_db_connection(conn)
 
-    # --- Existing Database Functions (Unchanged from your provided code) ---
     def get_or_create_active_submission(user_email_param):
         conn = get_db_connection()
         if not conn: return None
@@ -269,27 +248,21 @@ def survey(navigate_to, user_email, secrets):
                 cursor.execute("SELECT item_id, normalized_score FROM aacs_responses WHERE submission_id = %s", (submission_id_param,))
                 responses = {row['item_id']: row['normalized_score'] for row in cursor.fetchall()}
             if not responses: return True
+            
             scores = {}
-            sub_index_abbreviations = {
-                'Communicated Intent (CI)': 'CI', 'Trust, Challenge, and Support (TCS)': 'TCS', 'Strategy, Coherence, and Reinforcement (SCR)': 'SCR',
-                'Antennae and Vigilance (AV)': 'AV', 'Learning, Linking, and Responding (LLR)': 'LLR', 'Challenge, Reframing, and Interpretation (CRI)': 'CRI',
-                'Systems, Integration, and Structures (SIS)': 'SIS', 'Competency Development and Internalisation (CDI)': 'CDI', 'Execution, Effectiveness, and Routines (EER)': 'EER',
-                'Wellbeing and Balance (WBS)': 'WBS', 'Ethics, Compassion, and Integrity (ECI)': 'ECI', 'Resilience, Contingency, and Rebound (RCR)': 'RCR'
-            }
+            sub_index_abbr = {'Communicated Intent (CI)': 'CI', 'Trust, Challenge, and Support (TCS)': 'TCS', 'Strategy, Coherence, and Reinforcement (SCR)': 'SCR', 'Antennae and Vigilance (AV)': 'AV', 'Learning, Linking, and Responding (LLR)': 'LLR', 'Challenge, Reframing, and Interpretation (CRI)': 'CRI', 'Systems, Integration, and Structures (SIS)': 'SIS', 'Competency Development and Internalisation (CDI)': 'CDI', 'Execution, Effectiveness, and Routines (EER)': 'EER', 'Wellbeing and Balance (WBS)': 'WBS', 'Ethics, Compassion, and Integrity (ECI)': 'ECI', 'Resilience, Contingency, and Rebound (RCR)': 'RCR'}
+            
             for name, items in sub_index_mapping.items():
-                abbr = sub_index_abbreviations[name]
-                item_scores = [responses.get(i) for i in items if responses.get(i) is not None]
+                abbr = sub_index_abbr[name]
+                item_scores = [responses.get(i) for i in items if i in responses]
                 if item_scores: scores[abbr] = round(np.mean(item_scores), 2)
             
-            domain_calcs = {
-                'Alignment': ['CI', 'TCS', 'SCR'], 'Agility': ['AV', 'LLR', 'CRI'],
-                'Capability': ['SIS', 'CDI', 'EER'], 'Sustainability': ['WBS', 'ECI', 'RCR']
-            }
+            domain_calcs = {'Alignment': ['CI', 'TCS', 'SCR'], 'Agility': ['AV', 'LLR', 'CRI'], 'Capability': ['SIS', 'CDI', 'EER'], 'Sustainability': ['WBS', 'ECI', 'RCR']}
             for domain, subs in domain_calcs.items():
-                domain_scores_list = [scores.get(s) for s in subs if scores.get(s) is not None]
+                domain_scores_list = [scores.get(s) for s in subs if s in scores]
                 if domain_scores_list: scores[domain] = round(np.mean(domain_scores_list), 2)
             
-            final_domain_scores = [scores.get(d) for d in all_domain_keys if scores.get(d) is not None]
+            final_domain_scores = [scores.get(d) for d in all_domain_keys if d in scores]
             if final_domain_scores: scores['PI'] = round(np.mean(final_domain_scores), 2)
 
             with conn.cursor() as cursor:
@@ -313,7 +286,7 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return
         try:
             with conn.cursor() as cursor:
-                query = f"INSERT INTO accs_category_completed (Email_ID, submission_id, `{domain_to_mark_completed}`) VALUES (%s, %s, TRUE) ON DUPLICATE KEY UPDATE `{domain_to_mark_completed}` = TRUE"
+                query = f"INSERT INTO aacs_Category_Completed (Email_ID, submission_id, `{domain_to_mark_completed}`) VALUES (%s, %s, TRUE) ON DUPLICATE KEY UPDATE `{domain_to_mark_completed}` = TRUE"
                 cursor.execute(query, (user_email_param, submission_id_param))
                 conn.commit()
         finally:
@@ -327,7 +300,7 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return loaded_responses, completed_domains
         try:
             with conn.cursor(dictionary=True, buffered=True) as cursor:
-                cursor.execute("SELECT * FROM accs_category_completed WHERE Email_ID = %s AND submission_id = %s", (user_email_param, submission_id_param))
+                cursor.execute("SELECT * FROM aacs_Category_Completed WHERE Email_ID = %s AND submission_id = %s", (user_email_param, submission_id_param))
                 completion_data = cursor.fetchone()
                 if completion_data:
                     for domain in all_domain_keys:
@@ -346,13 +319,12 @@ def survey(navigate_to, user_email, secrets):
             close_db_connection(conn)
         return loaded_responses, completed_domains
 
-    # --- NEW: UI View Functions ---
+    # --- UI View Functions ---
     def show_survey_view(user_email):
         if 'submission_id' not in st.session_state:
             st.session_state.submission_id = get_or_create_active_submission(user_email)
             if not st.session_state.submission_id:
-                st.error("Could not initialize survey session.")
-                return
+                st.error("Could not initialize survey session."); return
             st.session_state.responses, st.session_state.saved_domains = load_user_progress(user_email, st.session_state.submission_id)
             st.session_state.selected_domain = None
             st.rerun()
@@ -369,7 +341,7 @@ def survey(navigate_to, user_email, secrets):
             cols = st.columns(len(all_domain_keys))
             for i, domain_key in enumerate(all_domain_keys):
                 is_completed = domain_key in st.session_state.saved_domains
-                answered = sum(1 for r in st.session_state.responses[domain_key].values() if r != "Select")
+                answered = sum(1 for r in st.session_state.responses.get(domain_key, {}).values() if r != "Select")
                 total = len(survey_questions[domain_key])
                 css_class = "category-container completed" if is_completed else "category-container"
                 with cols[i]:
@@ -433,7 +405,7 @@ def survey(navigate_to, user_email, secrets):
         st.markdown("---")
 
         with st.spinner("Loading team status..."):
-            team_members = get_team_status(user_info['organisation_name'], user_info['sports_team'])
+            team_members = get_team_status(user_info.get('organisation_name'), user_info.get('sports_team'))
         
         if not team_members:
             st.warning("No team members found for your team.")
@@ -463,11 +435,12 @@ def survey(navigate_to, user_email, secrets):
         else:
             selected_to_remind = st.multiselect("Select members to remind:", 
                                             options=uncompleted_members, 
-                                            format_func=lambda m: f"{m['first_name']} {m['last_name']} ({m['status']})")
+                                            format_func=lambda m: f"{m.get('first_name', '')} {m.get('last_name', '')} ({m.get('status')})".strip())
             if st.button("Send Reminders to Selected", disabled=not selected_to_remind, use_container_width=True):
-                admin_name = f"{user_info['first_name']} {user_info['last_name']}"
+                admin_name = f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip()
                 for member in selected_to_remind:
-                    send_reminder_email(member['Email_Id'], f"{member['first_name']} {member['last_name']}", admin_name, user_info['sports_team'])
+                    member_name = f"{member.get('first_name', '')} {member.get('last_name', '')}".strip()
+                    send_reminder_email(member['Email_Id'], member_name, admin_name, user_info.get('sports_team'))
 
     def show_team_dashboard(user_info):
         st.title(f"📈 Team Dashboard: {user_info.get('sports_team', 'Your Team')}")
@@ -477,11 +450,10 @@ def survey(navigate_to, user_email, secrets):
         st.markdown("---")
 
         with st.spinner("Calculating team averages..."):
-            avg_scores, num_respondents = get_team_average_scores(user_info['organisation_name'], user_info['sports_team'])
+            avg_scores, num_respondents = get_team_average_scores(user_info.get('organisation_name'), user_info.get('sports_team'))
 
         if not avg_scores:
-            st.error("Could not retrieve team data.")
-            return
+            st.error("Could not retrieve team data."); return
 
         col1, col2 = st.columns(2)
         col1.metric("Total Respondents", num_respondents)
@@ -520,20 +492,18 @@ def survey(navigate_to, user_email, secrets):
             c2.metric("Ethics & Integrity (ECI)", f"{avg_scores.get('ECI', 0):.2f}")
             c3.metric("Resilience & Rebound (RCR)", f"{avg_scores.get('RCR', 0):.2f}")
 
-    # --- NEW: Main Application Router ---
+    # --- Main Application Router ---
     set_background(bg_path)
     display_branding_and_logout_placeholder(logo_path)
     st.markdown('<div class="logout-button-container">', unsafe_allow_html=True)
     if st.button("⏻", key="logout_button", help="Logout"):
         for key in list(st.session_state.keys()): del st.session_state[key]
-        navigate_to("login")
-        st.rerun()
+        navigate_to("login"); st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
     user_info = get_user_info(user_email)
     if not user_info:
-        st.error("Could not retrieve your user profile. Please contact support.")
-        return
+        st.error("Could not retrieve your user profile. Please contact support."); return
 
     if 'view' not in st.session_state:
         user_status = get_user_submission_status(user_email)
@@ -541,16 +511,13 @@ def survey(navigate_to, user_email, secrets):
             st.session_state.view = 'admin_hub'
         elif user_status == 'completed':
             st.session_state.view = 'thank_you'
-        else: # 'in-progress' or 'Not Started'
+        else:
             st.session_state.view = 'survey'
 
-    # Render the appropriate view based on session state
-    view_to_show = st.session_state.view
-    if view_to_show == 'admin_hub':
-        show_admin_hub(user_info)
-    elif view_to_show == 'team_dashboard':
-        show_team_dashboard(user_info)
-    elif view_to_show == 'survey':
-        show_survey_view(user_email)
-    elif view_to_show == 'thank_you':
-        show_thank_you_view(user_info)
+    view_map = {'admin_hub': show_admin_hub, 'team_dashboard': show_team_dashboard, 'survey': show_survey_view, 'thank_you': show_thank_you_view}
+    view_func = view_map.get(st.session_state.view)
+    if view_func:
+        if st.session_state.view == 'survey':
+            view_func(user_email)
+        else:
+            view_func(user_info)
