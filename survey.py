@@ -116,18 +116,16 @@ def survey(navigate_to, user_email, secrets):
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
     
+    # REFINED to match the new schema understanding
     def get_user_info(email):
         conn = get_db_connection()
         if not conn: return None
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # CORRECTED: Using 'Email_Id' to match the database schema
-                cursor.execute("SELECT * FROM admin_team_members WHERE Email_Id = %s", (email,))
-                user = cursor.fetchone()
-                if user: return user
-                # CORRECTED: Using 'Email_Id' to match the database schema
+                # CORRECTED: Query only the user_registration table using the correct column name 'Email_Id'
                 cursor.execute("SELECT * FROM user_registration WHERE Email_Id = %s", (email,))
-                return cursor.fetchone()
+                user = cursor.fetchone()
+                return user
         finally:
             close_db_connection(conn)
     
@@ -136,7 +134,7 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return "Not Started"
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # CORRECTED: Using 'Email_Id' to match the database schema
+                # CORRECTED: Use 'Email_Id' to match the schema
                 query = "SELECT status FROM submissions WHERE Email_Id = %s ORDER BY start_date DESC LIMIT 1"
                 cursor.execute(query, (email,))
                 result = cursor.fetchone()
@@ -144,40 +142,59 @@ def survey(navigate_to, user_email, secrets):
         finally:
             close_db_connection(conn)
 
-    def get_team_status(org_name, team_name):
+    # REFINED to match the new schema understanding
+    def get_team_status(admin_email):
         conn = get_db_connection()
         if not conn: return []
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # CORRECTED: Using 'Email_Id' to match the database schema
-                query = "SELECT Email_Id, first_name, last_name FROM user_registration WHERE organisation_name = %s AND sports_team = %s AND is_admin = FALSE"
-                cursor.execute(query, (org_name, team_name))
+                # Step 1: Get the list of team member emails from the mapping table
+                cursor.execute("SELECT team_member_email FROM admin_team_members WHERE admin_email = %s", (admin_email,))
+                member_emails_result = cursor.fetchall()
+                if not member_emails_result:
+                    return []
+                
+                member_emails = [row['team_member_email'] for row in member_emails_result]
+                
+                # Step 2: Get details for those members from the user_registration table
+                # We use a format string for the IN clause placeholder
+                format_strings = ','.join(['%s'] * len(member_emails))
+                query = f"SELECT Email_Id, first_name, last_name FROM user_registration WHERE Email_Id IN ({format_strings})"
+                cursor.execute(query, tuple(member_emails))
                 members = cursor.fetchall()
+                
+                # Step 3: Get the status for each member
                 for member in members:
                     member['status'] = get_user_submission_status(member['Email_Id'])
                 return members
         finally:
             close_db_connection(conn)
 
-    def get_team_average_scores(org_name, team_name):
+    def get_team_average_scores(admin_email):
         conn = get_db_connection()
         if not conn: return None, 0
         try:
-            # CORRECTED: Using 'Email_Id' to match the database schema
-            query = """
-                SELECT s.id FROM submissions s
-                JOIN user_registration u ON s.Email_Id = u.Email_Id
-                WHERE u.organisation_name = %s AND u.sports_team = %s AND s.status = 'completed'
-            """
-            submission_ids_df = pd.read_sql(query, conn, params=(org_name, team_name))
+            # Step 1: Get the list of team member emails from the mapping table
+            with conn.cursor(dictionary=True) as cursor:
+                cursor.execute("SELECT team_member_email FROM admin_team_members WHERE admin_email = %s", (admin_email,))
+                member_emails_result = cursor.fetchall()
+            if not member_emails_result:
+                return None, 0
+            member_emails = tuple(row['team_member_email'] for row in member_emails_result)
+
+            # Step 2: Get completed submission IDs for those team members
+            format_strings = ','.join(['%s'] * len(member_emails))
+            query = f"SELECT id FROM submissions WHERE Email_Id IN ({format_strings}) AND status = 'completed'"
+            submission_ids_df = pd.read_sql(query, conn, params=member_emails)
+
             if submission_ids_df.empty:
                 return None, 0
             
             sub_ids_list = submission_ids_df['id'].tolist()
             sub_ids_tuple = tuple(sub_ids_list)
-            
             sub_ids_sql = str(sub_ids_tuple) if len(sub_ids_tuple) > 1 else f"({sub_ids_tuple[0]})"
 
+            # Step 3: Fetch scores for those submissions
             align_df = pd.read_sql(f"SELECT * FROM alignment_scores WHERE submission_id IN {sub_ids_sql}", conn)
             agile_df = pd.read_sql(f"SELECT * FROM agility_scores WHERE submission_id IN {sub_ids_sql}", conn)
             cap_df = pd.read_sql(f"SELECT * FROM capability_scores WHERE submission_id IN {sub_ids_sql}", conn)
@@ -200,14 +217,12 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return None
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # CORRECTED: Using 'Email_Id' to match the database schema
                 query = "SELECT id FROM submissions WHERE Email_Id = %s AND status = 'in-progress' ORDER BY start_date DESC LIMIT 1"
                 cursor.execute(query, (user_email_param,))
                 submission = cursor.fetchone()
                 if submission:
                     return submission['id']
                 else:
-                    # CORRECTED: Using 'Email_Id' to match the database schema
                     insert_query = "INSERT INTO submissions (Email_Id, status) VALUES (%s, 'in-progress')"
                     cursor.execute(insert_query, (user_email_param,))
                     conn.commit()
@@ -413,10 +428,10 @@ def survey(navigate_to, user_email, secrets):
         st.markdown("---")
 
         with st.spinner("Loading team status..."):
-            team_members = get_team_status(user_info.get('organisation_name'), user_info.get('sports_team'))
+            team_members = get_team_status(user_info.get('Email_Id')) # Use admin's email to find their team
         
         if not team_members:
-            st.warning("No team members found for your team.")
+            st.warning("No team members are assigned to you in the admin_team_members table.")
             return
 
         completed_count = sum(1 for m in team_members if m['status'] == 'completed')
@@ -448,7 +463,6 @@ def survey(navigate_to, user_email, secrets):
                 admin_name = f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip()
                 for member in selected_to_remind:
                     member_name = f"{member.get('first_name', '')} {member.get('last_name', '')}".strip()
-                    # CORRECTED: Using 'Email_Id' key which is present in the dictionary
                     send_reminder_email(member['Email_Id'], member_name, admin_name, user_info.get('sports_team'))
 
     def show_team_dashboard(user_info):
@@ -459,7 +473,7 @@ def survey(navigate_to, user_email, secrets):
         st.markdown("---")
 
         with st.spinner("Calculating team averages..."):
-            avg_scores, num_respondents = get_team_average_scores(user_info.get('organisation_name'), user_info.get('sports_team'))
+            avg_scores, num_respondents = get_team_average_scores(user_info.get('Email_Id')) # Use admin's email
 
         if not avg_scores:
             st.error("Could not retrieve team data."); return
