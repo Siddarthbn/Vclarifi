@@ -28,10 +28,6 @@ def survey(navigate_to, user_email, secrets):
             DB_USER = secrets['DB_USER']
             DB_PASSWORD = secrets['DB_PASSWORD']
             DB_DATABASE = "Vclarifi"  # Assuming the same database
-            # SENDER_EMAIL = secrets['SENDER_EMAIL']
-            # SENDER_APP_PASSWORD = secrets['SENDER_APP_PASSWORD']
-            # SMTP_SERVER = secrets['SMTP_SERVER']
-            # SMTP_PORT = secrets['SMTP_PORT']
             CONFIG_LOADED_SUCCESSFULLY = True
             logging.info("Configuration secrets successfully processed.")
         else:
@@ -39,7 +35,6 @@ def survey(navigate_to, user_email, secrets):
     except (KeyError, ValueError) as e:
         logging.critical(f"FATAL: Could not read secrets passed into function. Check keys. Error: {e}")
         DB_HOST = DB_DATABASE = DB_USER = DB_PASSWORD = None
-        # SENDER_EMAIL = SENDER_APP_PASSWORD = SMTP_SERVER = SMTP_PORT = None
         CONFIG_LOADED_SUCCESSFULLY = False
 
     # --- Initial Configuration Check ---
@@ -343,8 +338,9 @@ def survey(navigate_to, user_email, secrets):
         try:
             with conn.cursor() as cursor:
                 col_name = f"`{domain_to_mark_completed}`"
+                # UPDATED TABLE NAME
                 query = f"""
-                    INSERT INTO Category_Completed (Email_ID, submission_id, {col_name})
+                    INSERT INTO accs_category_completed (Email_ID, submission_id, {col_name})
                     VALUES (%s, %s, TRUE)
                     ON DUPLICATE KEY UPDATE {col_name} = TRUE
                 """
@@ -368,7 +364,8 @@ def survey(navigate_to, user_email, secrets):
 
         try:
             with conn.cursor(dictionary=True, buffered=True) as cursor:
-                cursor.execute("SELECT * FROM Category_Completed WHERE Email_ID = %s AND submission_id = %s", (user_email_param, submission_id_param))
+                # UPDATED TABLE NAME
+                cursor.execute("SELECT * FROM accs_category_completed WHERE Email_ID = %s AND submission_id = %s", (user_email_param, submission_id_param))
                 completion_data = cursor.fetchone()
                 if completion_data:
                     for domain in all_domain_keys:
