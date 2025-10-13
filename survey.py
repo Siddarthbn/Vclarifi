@@ -104,7 +104,7 @@ def survey(navigate_to, user_email, secrets):
     }
     all_domain_keys = list(survey_questions.keys())
     question_to_sub_domain = {q_id: sub_domain for sub_domain, q_list in sub_index_mapping.items() for q_id in q_list}
-    
+
     # --- Database Interaction Functions ---
     def get_db_connection():
         try:
@@ -121,12 +121,12 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return None
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # REFINED: Using lowercase 'email_id'
-                cursor.execute("SELECT * FROM admin_team_members WHERE email_id = %s", (email,))
+                # CORRECTED: Using 'Email_Id' to match the database schema
+                cursor.execute("SELECT * FROM admin_team_members WHERE Email_Id = %s", (email,))
                 user = cursor.fetchone()
                 if user: return user
-                # REFINED: Using lowercase 'email_id'
-                cursor.execute("SELECT * FROM user_registration WHERE email_id = %s", (email,))
+                # CORRECTED: Using 'Email_Id' to match the database schema
+                cursor.execute("SELECT * FROM user_registration WHERE Email_Id = %s", (email,))
                 return cursor.fetchone()
         finally:
             close_db_connection(conn)
@@ -136,8 +136,8 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return "Not Started"
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # REFINED: Using lowercase 'email_id'
-                query = "SELECT status FROM submissions WHERE email_id = %s ORDER BY start_date DESC LIMIT 1"
+                # CORRECTED: Using 'Email_Id' to match the database schema
+                query = "SELECT status FROM submissions WHERE Email_Id = %s ORDER BY start_date DESC LIMIT 1"
                 cursor.execute(query, (email,))
                 result = cursor.fetchone()
                 return result['status'] if result else "Not Started"
@@ -149,12 +149,12 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return []
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # REFINED: Using lowercase 'email_id'
-                query = "SELECT email_id, first_name, last_name FROM user_registration WHERE organisation_name = %s AND sports_team = %s AND is_admin = FALSE"
+                # CORRECTED: Using 'Email_Id' to match the database schema
+                query = "SELECT Email_Id, first_name, last_name FROM user_registration WHERE organisation_name = %s AND sports_team = %s AND is_admin = FALSE"
                 cursor.execute(query, (org_name, team_name))
                 members = cursor.fetchall()
                 for member in members:
-                    member['status'] = get_user_submission_status(member['email_id'])
+                    member['status'] = get_user_submission_status(member['Email_Id'])
                 return members
         finally:
             close_db_connection(conn)
@@ -163,10 +163,10 @@ def survey(navigate_to, user_email, secrets):
         conn = get_db_connection()
         if not conn: return None, 0
         try:
-            # REFINED: Using lowercase 'email_id'
+            # CORRECTED: Using 'Email_Id' to match the database schema
             query = """
                 SELECT s.id FROM submissions s
-                JOIN user_registration u ON s.email_id = u.email_id
+                JOIN user_registration u ON s.Email_Id = u.Email_Id
                 WHERE u.organisation_name = %s AND u.sports_team = %s AND s.status = 'completed'
             """
             submission_ids_df = pd.read_sql(query, conn, params=(org_name, team_name))
@@ -200,15 +200,15 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return None
         try:
             with conn.cursor(dictionary=True) as cursor:
-                # REFINED: Using lowercase 'email_id'
-                query = "SELECT id FROM submissions WHERE email_id = %s AND status = 'in-progress' ORDER BY start_date DESC LIMIT 1"
+                # CORRECTED: Using 'Email_Id' to match the database schema
+                query = "SELECT id FROM submissions WHERE Email_Id = %s AND status = 'in-progress' ORDER BY start_date DESC LIMIT 1"
                 cursor.execute(query, (user_email_param,))
                 submission = cursor.fetchone()
                 if submission:
                     return submission['id']
                 else:
-                    # REFINED: Using lowercase 'email_id'
-                    insert_query = "INSERT INTO submissions (email_id, status) VALUES (%s, 'in-progress')"
+                    # CORRECTED: Using 'Email_Id' to match the database schema
+                    insert_query = "INSERT INTO submissions (Email_Id, status) VALUES (%s, 'in-progress')"
                     cursor.execute(insert_query, (user_email_param,))
                     conn.commit()
                     return cursor.lastrowid
@@ -292,7 +292,7 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return
         try:
             with conn.cursor() as cursor:
-                # REFINED: Using lowercase 'Email_ID' to be consistent, although schema has 'Email_ID'
+                # CORRECTED: Schema has Email_ID with capital D
                 query = f"INSERT INTO aacs_Category_Completed (Email_ID, submission_id, `{domain_to_mark_completed}`) VALUES (%s, %s, TRUE) ON DUPLICATE KEY UPDATE `{domain_to_mark_completed}` = TRUE"
                 cursor.execute(query, (user_email_param, submission_id_param))
                 conn.commit()
@@ -307,7 +307,7 @@ def survey(navigate_to, user_email, secrets):
         if not conn: return loaded_responses, completed_domains
         try:
             with conn.cursor(dictionary=True, buffered=True) as cursor:
-                # REFINED: Using lowercase 'Email_ID'
+                # CORRECTED: Schema has Email_ID with capital D
                 cursor.execute("SELECT * FROM aacs_Category_Completed WHERE Email_ID = %s AND submission_id = %s", (user_email_param, submission_id_param))
                 completion_data = cursor.fetchone()
                 if completion_data:
@@ -448,7 +448,7 @@ def survey(navigate_to, user_email, secrets):
                 admin_name = f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip()
                 for member in selected_to_remind:
                     member_name = f"{member.get('first_name', '')} {member.get('last_name', '')}".strip()
-                    send_reminder_email(member['email_id'], member_name, admin_name, user_info.get('sports_team'))
+                    send_reminder_email(member['Email_Id'], member_name, admin_name, user_info.get('sports_team'))
 
     def show_team_dashboard(user_info):
         st.title(f"📈 Team Dashboard: {user_info.get('sports_team', 'Your Team')}")
