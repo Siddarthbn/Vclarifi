@@ -6,9 +6,7 @@ import mysql.connector
 from mysql.connector import Error
 import base64
 import os
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from contextlib import contextmanager
 import logging
 
 # --- PAGE CONFIGURATION ---
@@ -87,7 +85,6 @@ def fetch_aacs_dashboard_data(_user_email, secrets):
     finally:
         if conn and conn.is_connected(): conn.close()
 
-
 # ==============================================================================
 # --- UI, PLOTTING, AND DISPLAY FUNCTIONS ---
 # ==============================================================================
@@ -97,49 +94,44 @@ def encode_image(image_path):
         with open(image_path, "rb") as img_file: return base64.b64encode(img_file.read()).decode()
     except FileNotFoundError: st.warning(f"Image not found at {image_path}"); return ""
 
+@contextmanager
+def card_container():
+    """A context manager to wrap content in a styled card container."""
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    yield
+    st.markdown('</div>', unsafe_allow_html=True)
+
 def set_background(image_path):
     encoded_image = encode_image(image_path)
     if encoded_image:
         st.markdown(f"""
             <style>
-                /* REFINED: Apply background to the highest-level element (body) */
                 body {{
                     background-image: url('data:image/jpeg;base64,{encoded_image}');
-                    background-size: cover;
-                    background-position: center;
-                    background-repeat: no-repeat;
-                    background-attachment: fixed;
+                    background-size: cover; background-position: center;
+                    background-repeat: no-repeat; background-attachment: fixed;
                 }}
-                /* Make Streamlit's default backgrounds transparent to let the body background show through */
-                [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer"] > .main {{
+                [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer"] > .main, [data-testid="stHeader"], [data-testid="stToolbar"] {{
                     background: transparent;
                 }}
-                [data-testid="stHeader"], [data-testid="stToolbar"] {{
-                    background: transparent;
-                }}
-                /* This is now the SINGLE dark container that holds all content */
                 .main .block-container {{
-                    background-color: rgba(10, 20, 30, 0.9);
-                    padding: 25px 40px;
-                    border-radius: 15px;
-                    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7);
-                    border: 1px solid rgba(255, 255, 255, 0.18);
-                    margin: 2rem auto;
-                    max-width: 95%;
+                    padding: 1rem 1.5rem; max-width: 95%; margin: 1rem auto;
                 }}
-                /* General text styling for the container */
-                h1, h2, h3, h4, h5, p, label, .st-b3, .st-ag, .st-be, .stMetric * {{
-                    color: white !important;
+                .card {{
+                    background-color: rgba(0, 0, 0, 0.75);
+                    padding: 25px; border-radius: 15px;
+                    margin-bottom: 20px; border: 1px solid rgba(255, 255, 255, 0.1);
                 }}
+                h1, h2, h3, h4, h5, label, p, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
+                .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
             </style>
         """, unsafe_allow_html=True)
 
-def display_header(title, org_name):
+def display_header(title, logo_path, org_name):
     st.markdown(f"<h1 style='text-align: center; color: white;'>{title}</h1>", unsafe_allow_html=True)
     st.markdown(f"<h3 style='text-align: center; color: #ccc; margin-top: -10px;'>{org_name or ''}</h3>", unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown("<hr style='border-color: rgba(255,255,255,0.2);'>", unsafe_allow_html=True)
 
-# --- All other plotting and display helper functions are unchanged ---
 def get_color_for_score(score):
     try:
         score = float(score)
@@ -148,20 +140,19 @@ def get_color_for_score(score):
         else: return '#2ca02c'
     except (ValueError, TypeError): return '#808080'
 
-def plot_domain_comparison_bar_chart(scores_data, domains, benchmark):
-    domain_names = list(domains)
-    domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domain_names]
-    fig = go.Figure(go.Bar(
-        x=domain_scores, y=domain_names, orientation='h',
-        marker_color=[get_color_for_score(s) for s in domain_scores],
-        text=[f'{v:.1f}' for v in domain_scores], textposition='outside'
+def plot_radar_chart(scores_data, domains):
+    domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domains]
+    fig = go.Figure(go.Scatterpolar(
+        r=domain_scores + [domain_scores[0]], theta=domains + [domains[0]],
+        fill='toself', marker_color='rgba(0, 123, 255, 0.7)'
     ))
-    fig.add_vline(x=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark")
     fig.update_layout(
-        title_text="Domain Performance vs Benchmark", paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)', font_color='white', 
-        xaxis=dict(range=[0, 105], gridcolor='rgba(255,255,255,0.2)'),
-        yaxis=dict(autorange="reversed"), margin=dict(l=120)
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 100], color='white', gridcolor='rgba(255,255,255,0.3)'),
+            angularaxis=dict(color='white', linecolor='rgba(255,255,255,0.3)')
+        ),
+        showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        font_color='white', title='Holistic Performance Overview', margin=dict(t=80, b=40)
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -190,44 +181,15 @@ def get_performance_highlights(org_data, sub_vars_map, sub_abbr_to_full):
     df = pd.DataFrame(all_scores)
     return df.sort_values(by="Score", ascending=False).head(3), df.sort_values(by="Score", ascending=True).head(3)
 
-def generate_dynamic_summary(pi_score, benchmark, avg_scores, domains):
-    domain_scores = {domain: avg_scores.get(f'{domain}_score', 0.0) for domain in domains}
-    sorted_domains = sorted(domain_scores.items(), key=lambda item: item[1])
-    lowest_domain, lowest_score = sorted_domains[0]
-    highest_domain, highest_score = sorted_domains[-1]
-    
-    summary = f"The team's **Overall Performance Index (PI) is {pi_score:.1f}**. "
-    if pi_score >= benchmark:
-        summary += "This indicates a strong overall performance, exceeding the benchmark. "
-    else:
-        summary += "This is below the benchmark and suggests opportunities for strategic growth. "
-
-    summary += f"The highest-scoring domain is **{highest_domain}** (score: {highest_score:.1f}), representing a key organizational strength. "
-    summary += f"Conversely, the primary area for development is **{lowest_domain}** (score: {lowest_score:.1f})."
-    return summary
-
-def plot_score_distribution(df_all_scores, domains, benchmark):
-    selected_domain = st.selectbox("Select a Domain:", list(domains.keys()), key="dist_domain_select")
-    score_col = f"{selected_domain}_score"
-    if score_col in df_all_scores.columns:
-        fig = px.box(df_all_scores, y=score_col, title=f"Score Distribution for {selected_domain}", points="all", color_discrete_sequence=['#007BFF'])
-        fig.add_hline(y=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark", annotation_position="bottom right")
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white', yaxis_title="Score", xaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-
-
 # ==============================================================================
 # --- MAIN DASHBOARD FUNCTION ---
 # ==============================================================================
 
 def dashboard(navigate_to, user_email, secrets, **kwargs):
-    """Renders the main AACS dashboard page with a professional UI."""
     set_background(BG_IMAGE_PATH)
-
     avg_scores, org_name, all_scores_df = fetch_aacs_dashboard_data(user_email, secrets)
     
-    # We now render the header outside the main container for a full-width effect
-    display_header("Team Performance Dashboard", org_name)
+    display_header("Team Performance Dashboard", LOGO_PATH, org_name)
 
     if avg_scores is None or not avg_scores:
         st.warning("Dashboard data could not be loaded. Please ensure surveys have been completed by your team.")
@@ -247,48 +209,50 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     
     df_best, df_worst = get_performance_highlights(avg_scores, sub_vars_map, sub_abbr_to_full)
 
-    # --- All content below will be inside the single dark container ---
-    
-    st.subheader("High-Level Summary")
-    m1, m2 = st.columns([1, 2.5])
-    with m1:
+    # --- Top Metrics Row ---
+    with card_container():
+        m1, m2, m3, m4 = st.columns(4)
         pi_score = avg_scores.get('pi_score', 0)
-        st.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
-        st.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
-    with m2:
-        st.markdown(generate_dynamic_summary(pi_score, benchmark, avg_scores, sub_vars_map.keys()))
-    
-    st.markdown("---")
-
-    st.subheader("Performance Breakdown")
-    col1, col2 = st.columns([1.5, 1])
-    with col1:
-        plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
-    with col2:
-        st.write("Key Performance Insights")
+        m1.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
+        m2.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
         if df_best is not None and not df_best.empty:
-            st.markdown("<h6><span class='strength-icon'>✅</span> Top Strengths</h6>", unsafe_allow_html=True)
-            for _, row in df_best.iterrows():
-                st.markdown(f"<p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p>", unsafe_allow_html=True)
-        
+            m3.metric("Top Performing Area", df_best.iloc[0]['Sub-Domain'], f"Score: {df_best.iloc[0]['Score']:.1f}")
         if df_worst is not None and not df_worst.empty:
-            st.markdown("<h6 style='margin-top: 15px;'><span class='focus-icon'>🎯</span> Areas for Focus</h6>", unsafe_allow_html=True)
-            for _, row in df_worst.iterrows():
-                st.markdown(f"<p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p>", unsafe_allow_html=True)
+            m4.metric("Area for Focus", df_worst.iloc[0]['Sub-Domain'], f"Score: {df_worst.iloc[0]['Score']:.1f}")
 
-    st.markdown("---")
-
-    st.subheader("Detailed Analysis")
-    tab1, tab2 = st.tabs(["Sub-Domain Drill-Down", "Score Distribution"])
-    with tab1:
-        st.write("Explore the individual components of each domain.")
+    # --- Main Visuals & Insights Columns ---
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        with card_container():
+            st.subheader("Performance Overview")
+            plot_radar_chart(avg_scores, list(sub_vars_map.keys()))
+    with col2:
+        with card_container():
+            st.subheader("Key Insights")
+            if df_best is not None and not df_best.empty:
+                st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
+                for _, row in df_best.iterrows():
+                    st.markdown(f"**{row['Sub-Domain']}**: {row['Score']:.1f}")
+            st.markdown("---")
+            if df_worst is not None and not df_worst.empty:
+                st.markdown("<h5><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
+                for _, row in df_worst.iterrows():
+                    st.markdown(f"**{row['Sub-Domain']}**: {row['Score']:.1f}")
+    
+    # --- Detailed Sub-Domain Analysis ---
+    with card_container():
+        st.subheader("Detailed Sub-Domain Analysis")
         category = st.selectbox("Select Domain to Explore", list(sub_vars_map.keys()))
         if category:
             plot_sub_domain_charts(avg_scores, sub_vars_map[category], sub_abbr_to_full)
-    with tab2:
-        st.write("Analyze the range and variance of scores across team members for each domain.")
-        if all_scores_df is not None and not all_scores_df.empty:
-            plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
+
+    # --- NEW: Recommendations Button ---
+    with card_container():
+        st.subheader("Next Steps")
+        st.write("Based on these results, you can explore tailored suggestions for improvement.")
+        if st.button("Explore Recommendations 💡", use_container_width=True, type="primary"):
+            navigate_to("Recommendations")
+
 
 # ==============================================================================
 # --- SCRIPT EXECUTION ---
