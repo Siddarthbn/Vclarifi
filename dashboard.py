@@ -93,9 +93,8 @@ def fetch_aacs_dashboard_data(_user_email, secrets):
         agile_df = pd.read_sql(f"SELECT * FROM agility_scores WHERE submission_id IN {sub_ids_sql}", conn)
         cap_df = pd.read_sql(f"SELECT * FROM capability_scores WHERE submission_id IN {sub_ids_sql}", conn)
         sustain_df = pd.read_sql(f"SELECT * FROM sustainability_scores WHERE submission_id IN {sub_ids_sql}", conn)
-        pi_df = pd.read_sql(f"SELECT submission_id, pi_score FROM submissions WHERE id IN {sub_ids_sql}", conn)
+        pi_df = pd.read_sql(f"SELECT id as submission_id, pi_score FROM submissions WHERE id IN {sub_ids_sql}", conn)
 
-        # Merge all dataframes on submission_id
         all_scores_df = align_df
         for df in [agile_df, cap_df, sustain_df, pi_df]:
             all_scores_df = pd.merge(all_scores_df, df, on="submission_id", how="outer")
@@ -127,27 +126,29 @@ def set_background(image_path):
         st.markdown(f"""
             <style>
                 [data-testid="stAppViewContainer"] {{
-                    background-image: url('data:image/png;base64,{encoded_image}');
+                    background-image: url('data:image/jpeg;base64,{encoded_image}');
                     background-size: cover;
                 }}
                 [data-testid="stHeader"], [data-testid="stToolbar"] {{ background: rgba(0,0,0,0); }}
                 .card-container {{
-                    background-color: rgba(0,0,0,0.7);
-                    padding: 20px 25px;
+                    background-color: rgba(10, 20, 30, 0.7);
+                    padding: 25px;
                     border-radius: 15px;
-                    box-shadow: 0 8px 16px rgba(0,0,0,0.4);
-                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+                    backdrop-filter: blur(4px);
+                    -webkit-backdrop-filter: blur(4px);
+                    border: 1px solid rgba(255, 255, 255, 0.18);
                 }}
-                h1, h2, h3, h4, label, .st-b3, .st-ag, .st-be {{ color: white !important; }}
-                .main .block-container {{ padding: 2rem 1rem; }}
+                h1, h2, h3, h4, h5, label, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
+                .main .block-container {{ padding: 2rem 1.5rem; }}
                 .dashboard-header {{
-                    background-color: #000000; color: white; padding: 20px 30px; border-radius: 10px;
+                    background-color: rgba(0,0,0,0.8); color: white; padding: 20px 30px; border-radius: 10px;
                     margin-bottom: 30px; font-size: 2.5em; font-weight: bold;
                     display: flex; justify-content: space-between; align-items: center;
                 }}
                 .highlight-card {{
-                    background-color: #1a1a1a; padding: 15px; border-radius: 8px;
-                    border: 1px solid #333333; margin-bottom: 10px;
+                    background-color: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 8px;
+                    border: 1px solid rgba(255, 255, 255, 0.2); margin-bottom: 10px;
                 }}
                 .highlight-card p {{ color: white !important; margin-bottom: 0; }}
                 .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
@@ -174,16 +175,16 @@ def plot_radar_chart(scores_data, domains):
     domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domains]
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
-        r=domain_scores + [domain_scores[0]],  # Close the loop
+        r=domain_scores + [domain_scores[0]],
         theta=domains + [domains[0]],
         fill='toself',
-        marker_color='#007BFF',
+        marker_color='rgba(0, 123, 255, 0.7)',
         name='Team Average'
     ))
     fig.update_layout(
         polar=dict(
-            radialaxis=dict(visible=True, range=[0, 100], color='white'),
-            angularaxis=dict(color='white')
+            radialaxis=dict(visible=True, range=[0, 100], color='white', gridcolor='rgba(255,255,255,0.3)'),
+            angularaxis=dict(color='white', linecolor='rgba(255,255,255,0.3)')
         ),
         showlegend=False,
         paper_bgcolor='rgba(0,0,0,0)',
@@ -201,7 +202,7 @@ def plot_sub_domain_charts(scores_data, category, sub_vars):
             score = scores_data.get(sub, 0.0)
             fig = go.Figure(go.Pie(
                 values=[score, 100 - score], hole=.7,
-                marker_colors=[get_color_for_score(score), '#333'],
+                marker_colors=[get_color_for_score(score), 'rgba(255,255,255,0.1)'],
                 sort=False, textinfo='none'
             ))
             fig.update_layout(
@@ -214,17 +215,20 @@ def plot_sub_domain_charts(scores_data, category, sub_vars):
 def display_performance_highlights(org_data, sub_vars_map):
     all_scores = [{'Sub-Domain': sub, 'Domain': main, 'Score': float(org_data.get(sub, 0.0))} 
                   for main, subs in sub_vars_map.items() for sub in subs if org_data.get(sub)]
-    if not all_scores: return None, None
+    if not all_scores:
+        return None, None
     df = pd.DataFrame(all_scores)
     return df.sort_values(by="Score", ascending=False).head(3), df.sort_values(by="Score", ascending=True).head(3)
 
-def plot_score_distribution(df_all_scores, domains):
+def plot_score_distribution(df_all_scores, domains, benchmark):
     st.subheader("Score Distribution Analysis")
     selected_domain = st.selectbox("Select a Domain to see score distribution:", domains)
     score_col = f"{selected_domain}_score"
     if score_col in df_all_scores.columns:
-        fig = px.box(df_all_scores, y=score_col, title=f"Distribution of Scores for {selected_domain}", points="all")
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#1a1a1a', font_color='white')
+        fig = px.box(df_all_scores, y=score_col, title=f"Distribution of Scores for {selected_domain}", points="all",
+                     color_discrete_sequence=['#007BFF'])
+        fig.add_hline(y=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark", annotation_position="bottom right")
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white')
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No distribution data available for this domain.")
@@ -250,69 +254,77 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
         "Alignment": ["CI", "TCS", "SCR"], "Agility": ["AV", "LLR", "CRI"],
         "Capability": ["SIS", "CDI", "EER"], "Sustainability": ["WBS", "ECI", "RCR"]
     }
+    benchmark = 75.0
     
     df_best, df_worst = display_performance_highlights(avg_scores, sub_vars_map)
 
     # --- Top Metrics Row ---
     st.markdown('<div class="card-container" style="margin-bottom: 20px;">', unsafe_allow_html=True)
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Overall PI Score", f"{avg_scores.get('pi_score', 0):.1f}")
+    pi_score = avg_scores.get('pi_score', 0)
+    m1.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
     m2.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
-    if df_best is not None:
-        m3.metric("Top Performing Area", df_best.iloc[0]['Sub-Domain'], f"{df_best.iloc[0]['Score']:.1f}")
-    if df_worst is not None:
-        m4.metric("Area for Focus", df_worst.iloc[0]['Sub-Domain'], f"{df_worst.iloc[0]['Score']:.1f}")
+    if df_best is not None and not df_best.empty:
+        m3.metric("Top Performing Area", df_best.iloc[0]['Sub-Domain'], f"Score: {df_best.iloc[0]['Score']:.1f}")
+    if df_worst is not None and not df_worst.empty:
+        m4.metric("Area for Focus", df_worst.iloc[0]['Sub-Domain'], f"Score: {df_worst.iloc[0]['Score']:.1f}")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Main Content Columns ---
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        plot_radar_chart(avg_scores, list(sub_vars_map.keys()))
-        
-        st.markdown("---")
-        st.subheader("Detailed Domain Drill-Down")
-        tabs = st.tabs(list(sub_vars_map.keys()))
-        for i, (domain, sub_domains) in enumerate(sub_vars_map.items()):
-            with tabs[i]:
-                plot_sub_domain_charts(avg_scores, domain, sub_domains)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div class="card-container">', unsafe_allow_html=True)
+            plot_radar_chart(avg_scores, list(sub_vars_map.keys()))
+            st.markdown("---")
+            st.subheader("Detailed Domain Drill-Down")
+            tabs = st.tabs(list(sub_vars_map.keys()))
+            for i, (domain, sub_domains) in enumerate(sub_vars_map.items()):
+                with tabs[i]:
+                    plot_sub_domain_charts(avg_scores, domain, sub_domains)
+            st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.subheader("Key Performance Insights")
-        if df_best is not None:
-            st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
-            for _, row in df_best.iterrows():
-                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
-        
-        if df_worst is not None:
-            st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
-            for _, row in df_worst.iterrows():
-                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div class="card-container">', unsafe_allow_html=True)
+            st.subheader("Key Performance Insights")
+            if df_best is not None and not df_best.empty:
+                st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
+                for _, row in df_best.iterrows():
+                    st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+            
+            if df_worst is not None and not df_worst.empty:
+                st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
+                for _, row in df_worst.iterrows():
+                    st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="card-container" style="margin-top: 20px;">', unsafe_allow_html=True)
-        if all_scores_df is not None and not all_scores_df.empty:
-            plot_score_distribution(all_scores_df, list(sub_vars_map.keys()))
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div class="card-container" style="margin-top: 20px;">', unsafe_allow_html=True)
+            if all_scores_df is not None and not all_scores_df.empty:
+                plot_score_distribution(all_scores_df, list(sub_vars_map.keys()), benchmark)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
 # --- SCRIPT EXECUTION ---
 # ==============================================================================
 
 if __name__ == "__main__":
-    # This block is for direct execution and testing.
-    # It mocks secrets and user email. In your multi-page app, these will come from AWS and st.session_state.
+    # This block is for direct execution and local testing.
+    # Replace mock_secrets with your actual database credentials for local development.
     mock_secrets = {
-        "DB_HOST": "your_db_host", "DB_USER": "your_db_user",
-        "DB_PASSWORD": "your_db_password", "DB_DATABASE": "Vclarifi",
+        "DB_HOST": "localhost",
+        "DB_USER": "your_db_user",
+        "DB_PASSWORD": "your_db_password",
+        "DB_DATABASE": "Vclarifi",
     }
 
     if 'user_email' not in st.session_state:
+        # Hardcode an admin email from your database for testing
         st.session_state.user_email = 'siddarth@vtaraenergygroup.com'
 
+    # The navigate_to function is a placeholder for multi-page navigation
     def mock_navigate_to(page):
         st.success(f"Navigating to {page}...")
 
