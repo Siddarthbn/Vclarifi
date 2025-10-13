@@ -89,19 +89,19 @@ def fetch_aacs_dashboard_data(_user_email, secrets):
         sub_ids_tuple = tuple(sub_ids_list)
         sub_ids_sql = str(sub_ids_tuple) if len(sub_ids_tuple) > 1 else f"({sub_ids_tuple[0]})"
         
-        align_df = pd.read_sql(f"SELECT * FROM alignment_scores WHERE submission_id IN {sub_ids_sql}", conn)
-        agile_df = pd.read_sql(f"SELECT * FROM agility_scores WHERE submission_id IN {sub_ids_sql}", conn)
-        cap_df = pd.read_sql(f"SELECT * FROM capability_scores WHERE submission_id IN {sub_ids_sql}", conn)
-        sustain_df = pd.read_sql(f"SELECT * FROM sustainability_scores WHERE submission_id IN {sub_ids_sql}", conn)
+        # REFINED: Select specific columns to avoid duplicate 'id' columns from each table
+        align_df = pd.read_sql(f"SELECT submission_id, CI, TCS, SCR, Alignment_score FROM alignment_scores WHERE submission_id IN {sub_ids_sql}", conn)
+        agile_df = pd.read_sql(f"SELECT submission_id, AV, LLR, CRI, Agility_score FROM agility_scores WHERE submission_id IN {sub_ids_sql}", conn)
+        cap_df = pd.read_sql(f"SELECT submission_id, SIS, CDI, EER, Capability_score FROM capability_scores WHERE submission_id IN {sub_ids_sql}", conn)
+        sustain_df = pd.read_sql(f"SELECT submission_id, WBS, ECI, RCR, Sustainability_score FROM sustainability_scores WHERE submission_id IN {sub_ids_sql}", conn)
         pi_df = pd.read_sql(f"SELECT id as submission_id, pi_score FROM submissions WHERE id IN {sub_ids_sql}", conn)
 
+        # Merge all dataframes on the common 'submission_id' column
         all_scores_df = align_df
         for df in [agile_df, cap_df, sustain_df, pi_df]:
             all_scores_df = pd.merge(all_scores_df, df, on="submission_id", how="outer")
         
-        all_scores_df = all_scores_df.loc[:, ~all_scores_df.columns.duplicated()]
-
-        avg_scores = all_scores_df.mean(numeric_only=True).drop(['id', 'submission_id'], errors='ignore').round(2).to_dict()
+        avg_scores = all_scores_df.mean(numeric_only=True).drop(['submission_id'], errors='ignore').round(2).to_dict()
         avg_scores['respondent_count'] = len(submission_ids_df)
 
         return avg_scores, org_name, all_scores_df
@@ -217,8 +217,11 @@ def display_performance_highlights(org_data, sub_vars_map):
                   for main, subs in sub_vars_map.items() for sub in subs if org_data.get(sub)]
     if not all_scores:
         return None, None
+    
     df = pd.DataFrame(all_scores)
-    return df.sort_values(by="Score", ascending=False).head(3), df.sort_values(by="Score", ascending=True).head(3)
+    df_best = df.sort_values(by="Score", ascending=False).head(3)
+    df_worst = df.sort_values(by="Score", ascending=True).head(3)
+    return df_best, df_worst
 
 def plot_score_distribution(df_all_scores, domains, benchmark):
     st.subheader("Score Distribution Analysis")
@@ -244,7 +247,7 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
 
     avg_scores, org_name, all_scores_df = fetch_aacs_dashboard_data(user_email, secrets)
     
-    if not avg_scores:
+    if avg_scores is None or not avg_scores:
         st.warning("Dashboard data could not be loaded. Please ensure surveys have been completed by your team.")
         return
 
@@ -277,6 +280,7 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
         with st.container():
             st.markdown('<div class="card-container">', unsafe_allow_html=True)
             plot_radar_chart(avg_scores, list(sub_vars_map.keys()))
+            
             st.markdown("---")
             st.subheader("Detailed Domain Drill-Down")
             tabs = st.tabs(list(sub_vars_map.keys()))
@@ -311,20 +315,16 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
 # ==============================================================================
 
 if __name__ == "__main__":
-    # This block is for direct execution and local testing.
-    # Replace mock_secrets with your actual database credentials for local development.
     mock_secrets = {
         "DB_HOST": "localhost",
-        "DB_USER": "your_db_user",
-        "DB_PASSWORD": "your_db_password",
+        "DB_USER": "your_user",
+        "DB_PASSWORD": "your_password",
         "DB_DATABASE": "Vclarifi",
     }
 
     if 'user_email' not in st.session_state:
-        # Hardcode an admin email from your database for testing
         st.session_state.user_email = 'siddarth@vtaraenergygroup.com'
 
-    # The navigate_to function is a placeholder for multi-page navigation
     def mock_navigate_to(page):
         st.success(f"Navigating to {page}...")
 
