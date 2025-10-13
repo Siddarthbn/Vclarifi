@@ -25,6 +25,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%
 LOGO_PATH = os.path.join("images", "VTARA.png")
 BG_IMAGE_PATH = os.path.join("images", "background.jpg")
 
+# --- CONSTANTS AND MAPPINGS ---
+SUB_DOMAIN_FULL_NAMES = {
+    "CI": "Clarity of Intent", "TCS": "Team Cohesion & Synergy", "SCR": "Strategic & Customer Relevance",
+    "AV": "Adaptability & Velocity", "LLR": "Learning, Listening & Responding", "CRI": "Continuous & Rapid Innovation",
+    "SIS": "Systems, Information & Structure", "CDI": "Competency & Digital Mindset", "EER": "Empowerment & Enabling Risk",
+    "WBS": "Wellness & Balanced Scorecard", "ECI": "Ethical Conduct & Integrity", "RCR": "Responsible Corporate Citizenship"
+}
+
 # ==============================================================================
 # --- DATABASE & DATA FETCHING ---
 # ==============================================================================
@@ -132,12 +140,12 @@ def set_background(image_path):
                 }}
                 [data-testid="stHeader"], [data-testid="stToolbar"] {{ background: rgba(0,0,0,0); }}
                 .card-container {{
-                    background-color: rgba(10, 20, 30, 0.7);
+                    background-color: rgba(10, 20, 30, 0.75);
                     padding: 25px;
                     border-radius: 15px;
                     box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-                    backdrop-filter: blur(4px);
-                    -webkit-backdrop-filter: blur(4px);
+                    backdrop-filter: blur(5px);
+                    -webkit-backdrop-filter: blur(5px);
                     border: 1px solid rgba(255, 255, 255, 0.18);
                     margin-bottom: 20px; /* Add margin to separate containers */
                 }}
@@ -154,6 +162,13 @@ def set_background(image_path):
                 }}
                 .highlight-card p {{ color: white !important; margin-bottom: 0; }}
                 .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
+                .stButton button {{
+                    background-color: #007bff;
+                    color: white;
+                    font-weight: bold;
+                    border-radius: 10px;
+                    border: 1px solid #007bff;
+                }}
             </style>
         """, unsafe_allow_html=True)
 
@@ -171,30 +186,6 @@ def get_color_for_score(score):
         elif score < 75: return '#ff7f0e' # Orange
         else: return '#2ca02c'           # Green
     except (ValueError, TypeError): return '#808080' # Grey
-
-def plot_radar_chart(scores_data, domains):
-    """Generates a radar chart for the 4 main AACS domain scores."""
-    domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domains]
-    fig = go.Figure()
-    fig.add_trace(go.Scatterpolar(
-        r=domain_scores + [domain_scores[0]], # Close the loop
-        theta=domains + [domains[0]],
-        fill='toself',
-        marker_color='rgba(0, 123, 255, 0.7)',
-        name='Team Average'
-    ))
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(visible=True, range=[0, 100], color='white', gridcolor='rgba(255,255,255,0.3)'),
-            angularaxis=dict(color='white', linecolor='rgba(255,255,255,0.3)')
-        ),
-        showlegend=False,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font_color='white',
-        title='Holistic Performance Overview'
-    )
-    st.plotly_chart(fig, use_container_width=True)
 
 def plot_domain_comparison_bar_chart(scores_data, domains, benchmark):
     """Generates a bar chart for the 4 main AACS domain scores with benchmark."""
@@ -230,20 +221,21 @@ def plot_sub_domain_charts(scores_data, sub_vars):
     for i, sub in enumerate(sub_vars):
         with cols[i]:
             score = scores_data.get(sub, 0.0)
+            full_name = SUB_DOMAIN_FULL_NAMES.get(sub, sub)
             fig = go.Figure(go.Pie(
                 values=[score, 100 - score], hole=.7,
                 marker_colors=[get_color_for_score(score), 'rgba(255,255,255,0.1)'],
                 sort=False, textinfo='none'
             ))
             fig.update_layout(
-                title_text=sub, annotations=[dict(text=f'{score:.1f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')],
+                title_text=full_name, annotations=[dict(text=f'{score:.1f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')],
                 showlegend=False, height=250, margin=dict(t=40, b=0, l=0, r=0),
                 paper_bgcolor='rgba(0,0,0,0)', font_color='white'
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 def get_performance_highlights(org_data, sub_vars_map):
-    all_scores = [{'Sub-Domain': sub, 'Domain': main, 'Score': float(org_data.get(sub, 0.0))} 
+    all_scores = [{'Sub-Domain_Short': sub, 'Sub-Domain': SUB_DOMAIN_FULL_NAMES.get(sub, sub), 'Domain': main, 'Score': float(org_data.get(sub, 0.0))} 
                   for main, subs in sub_vars_map.items() for sub in subs if sub in org_data and org_data.get(sub) is not None]
     
     if not all_scores:
@@ -280,10 +272,10 @@ def plot_score_distribution(df_all_scores, domains, benchmark):
     
     if score_col in df_all_scores.columns:
         fig = px.box(df_all_scores, y=score_col, title=f"Score Distribution for {selected_domain}", points="all",
-                     color_discrete_sequence=['#007BFF'])
+                         color_discrete_sequence=['#007BFF'])
         fig.add_hline(y=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark", annotation_position="bottom right")
         fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white',
-                          yaxis_title="Score", xaxis_title="")
+                                yaxis_title="Score", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No distribution data available for this domain.")
@@ -337,11 +329,7 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
         
         with st.container():
             st.markdown('<div class="card-container">', unsafe_allow_html=True)
-            col1_1, col1_2 = st.columns(2)
-            with col1_1:
-                plot_radar_chart(avg_scores, list(sub_vars_map.keys()))
-            with col1_2:
-                plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
+            plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
             st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
@@ -374,6 +362,15 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
         if all_scores_df is not None and not all_scores_df.empty:
             plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- Recommendations Button ---
+    with st.container():
+        st.markdown('<div class="card-container">', unsafe_allow_html=True)
+        st.subheader("Next Steps")
+        st.markdown("Click below to view tailored recommendations based on your team's performance.")
+        if st.button("View Recommendations ➔", use_container_width=True, key="recommend_button"):
+            navigate_to("Recommendations")
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
