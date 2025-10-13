@@ -30,7 +30,6 @@ st.set_page_config(
 )
 
 # --- REFINED: Detailed AACS Survey Questions ---
-# This dictionary provides the exact questions for each category to generate highly specific recommendations.
 AACS_SURVEY_QUESTIONS = {
     "Alignment": {
         "AACS1": "Our organisational goals are clearly communicated across all levels.",
@@ -228,7 +227,7 @@ def fetch_aacs_team_scores(user_email):
             return None, org_name
         
         # 4. Fetch all AACS scores for these submissions
-        sub_ids_tuple = tuple(sub_ids)
+        score_placeholders = ', '.join(['%s'] * len(sub_ids))
         query_scores = f"""
             SELECT als.Alignment_score, ags.Agility_score, cs.Capability_score, ss.Sustainability_score
             FROM submissions s
@@ -236,9 +235,9 @@ def fetch_aacs_team_scores(user_email):
             LEFT JOIN agility_scores ags ON s.id = ags.submission_id
             LEFT JOIN capability_scores cs ON s.id = cs.submission_id
             LEFT JOIN sustainability_scores ss ON s.id = ss.submission_id
-            WHERE s.id IN %s
+            WHERE s.id IN ({score_placeholders})
         """
-        cursor.execute(query_scores, (sub_ids_tuple,))
+        cursor.execute(query_scores, sub_ids)
         scores_data = cursor.fetchall()
 
         if not scores_data:
@@ -272,7 +271,6 @@ def generate_recommendations(_category_name, average_score, survey_questions):
         genai.configure(api_key=all_secrets["GEMINI_API_KEY"])
         model = genai.GenerativeModel(model_name=GEMINI_MODEL)
         
-        # Get the specific questions for the selected category
         category_specific_questions = survey_questions.get(_category_name, {})
         question_details = "\n".join([f"- {q_text}" for q_id, q_text in category_specific_questions.items()])
         
@@ -365,7 +363,6 @@ def recommendations_page(navigate_to=None, user_email=None, **kwargs):
             if navigate_to: navigate_to("Dashboard")
         return
 
-    # Map display names to the score keys from the database
     aacs_category_keys = {
         "Alignment": "Alignment_score", "Agility": "Agility_score",
         "Capability": "Capability_score", "Sustainability": "Sustainability_score"
@@ -391,9 +388,7 @@ def recommendations_page(navigate_to=None, user_email=None, **kwargs):
 # ==============================================================================
 
 if __name__ == "__main__":
-    # This block allows you to run the script directly for testing
     if 'user_email' not in st.session_state:
-        # 🚨 IMPORTANT: Change this to a valid email in your database for testing
         st.session_state['user_email'] = 'siddarth@vtaraenergygroup.com' 
     
     def mock_navigate_to(page):
