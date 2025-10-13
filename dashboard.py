@@ -6,7 +6,9 @@ import mysql.connector
 from mysql.connector import Error
 import base64
 import os
-from contextlib import contextmanager
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import logging
 
 # --- PAGE CONFIGURATION ---
@@ -24,64 +26,43 @@ LOGO_PATH = os.path.join("images", "VTARA.png")
 BG_IMAGE_PATH = os.path.join("images", "background.jpg")
 
 # ==============================================================================
-# --- DATABASE & DATA FETCHING ---
+# --- DATABASE & DATA FETCHING (Unchanged) ---
 # ==============================================================================
+# All data fetching functions (get_db_connection, fetch_aacs_dashboard_data, etc.)
+# are unchanged from the previous correct version. They are included here for completeness.
 
 def get_db_connection(secrets):
-    """Establishes database connection using secrets."""
-    if not secrets:
-        st.error("❌ Database connection failed: Could not load secrets.")
-        return None
+    if not secrets: st.error("❌ DB connection failed: Secrets not loaded."); return None
     try:
         return mysql.connector.connect(
-            host=secrets['DB_HOST'],
-            database=secrets['DB_DATABASE'],
-            user=secrets['DB_USER'],
-            password=secrets['DB_PASSWORD']
+            host=secrets['DB_HOST'], database=secrets['DB_DATABASE'],
+            user=secrets['DB_USER'], password=secrets['DB_PASSWORD']
         )
     except (KeyError, mysql.connector.Error) as e:
-        st.error(f"❌ Database connection error: {e}")
-        return None
+        st.error(f"❌ DB connection error: {e}"); return None
 
 @st.cache_data(ttl=600)
 def fetch_aacs_dashboard_data(_user_email, secrets):
-    """Fetches and aggregates latest AACS survey data for an admin's team, returning both averages and individual scores."""
     conn = get_db_connection(secrets)
     if not conn: return None, None, None
-
     try:
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute("SELECT * FROM user_registration WHERE Email_Id = %s AND is_admin = 1", (_user_email,))
             admin_info = cursor.fetchone()
-        
         if not admin_info:
-            st.warning("Admin user not found or does not have admin privileges.")
-            return None, None, None
-        
+            st.warning("Admin user not found or does not have admin privileges."); return None, None, None
         org_name = admin_info.get("organisation_name")
-
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute("SELECT team_member_email FROM admin_team_members WHERE admin_email = %s", (_user_email,))
             member_emails_result = cursor.fetchall()
-
         team_emails = [row['team_member_email'] for row in member_emails_result]
         team_emails.append(_user_email)
-        
-        if not team_emails:
-            return {}, org_name, pd.DataFrame()
+        if not team_emails: return {}, org_name, pd.DataFrame()
 
         placeholders = ','.join(['%s'] * len(team_emails))
-        query = f"""
-            SELECT id FROM (
-                SELECT id, Email_Id, ROW_NUMBER() OVER(PARTITION BY Email_Id ORDER BY completion_date DESC) as rn
-                FROM submissions
-                WHERE Email_Id IN ({placeholders}) AND status = 'completed'
-            ) ranked_submissions
-            WHERE rn = 1
-        """
+        query = f"SELECT id FROM (SELECT id, Email_Id, ROW_NUMBER() OVER(PARTITION BY Email_Id ORDER BY completion_date DESC) as rn FROM submissions WHERE Email_Id IN ({placeholders}) AND status = 'completed') ranked_submissions WHERE rn = 1"
         submission_ids_df = pd.read_sql(query, conn, params=tuple(team_emails))
-        if submission_ids_df.empty:
-            return {}, org_name, pd.DataFrame()
+        if submission_ids_df.empty: return {}, org_name, pd.DataFrame()
 
         sub_ids_list = submission_ids_df['id'].tolist()
         sub_ids_tuple = tuple(sub_ids_list)
@@ -100,11 +81,9 @@ def fetch_aacs_dashboard_data(_user_email, secrets):
         
         avg_scores = all_scores_df.mean(numeric_only=True).drop(['submission_id'], errors='ignore').round(2).to_dict()
         avg_scores['respondent_count'] = len(submission_ids_df)
-
         return avg_scores, org_name, all_scores_df
     except Exception as e:
-        st.error(f"❌ An error occurred during data fetching: {e}")
-        logging.error(f"Data fetching error: {e}")
+        st.error(f"❌ An error occurred during data fetching: {e}"); logging.error(f"Data fetching error: {e}")
         return None, None, None
     finally:
         if conn and conn.is_connected(): conn.close()
@@ -118,53 +97,47 @@ def encode_image(image_path):
         with open(image_path, "rb") as img_file: return base64.b64encode(img_file.read()).decode()
     except FileNotFoundError: st.warning(f"Image not found at {image_path}"); return ""
 
-@contextmanager
-def card_container():
-    """A context manager to wrap content in a styled card container."""
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    yield
-    st.markdown('</div>', unsafe_allow_html=True)
-
 def set_background(image_path):
     encoded_image = encode_image(image_path)
     if encoded_image:
         st.markdown(f"""
             <style>
-                [data-testid="stAppViewContainer"] > .main {{
+                /* REFINED: Apply background to the highest-level element */
+                body {{
                     background-image: url('data:image/jpeg;base64,{encoded_image}');
-                    background-size: cover; background-position: center;
-                    background-repeat: no-repeat; background-attachment: fixed;
+                    background-size: cover;
+                    background-position: center;
+                    background-repeat: no-repeat;
+                    background-attachment: fixed;
                 }}
-                [data-testid="stHeader"], [data-testid="stToolbar"] {{ background: rgba(0,0,0,0); }}
-                .main .block-container {{ padding: 1rem 1.5rem; }} /* Adjust main block padding */
-                
-                /* Style for each individual dark container */
-                .card {{
-                    background-color: rgba(10, 20, 30, 0.85);
-                    padding: 25px;
+                /* Make Streamlit's default backgrounds transparent */
+                [data-testid="stAppViewContainer"] > .main {{
+                    background: transparent;
+                }}
+                [data-testid="stHeader"], [data-testid="stToolbar"] {{
+                    background: transparent;
+                }}
+                /* REFINED: This is now the SINGLE dark container for all content */
+                .main .block-container {{
+                    background-color: rgba(10, 20, 30, 0.9);
+                    padding: 25px 40px;
                     border-radius: 15px;
-                    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
-                    backdrop-filter: blur(5px);
-                    -webkit-backdrop-filter: blur(5px);
+                    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7);
                     border: 1px solid rgba(255, 255, 255, 0.18);
-                    margin-bottom: 20px;
+                    margin: 2rem auto;
+                    max-width: 95%;
                 }}
-                h1, h2, h3, h4, h5, label, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
-                .dashboard-header {{ /* This is separate from the cards */
-                    background: none; box-shadow: none; border: none;
-                    padding: 0 0 20px 0; font-size: 2.2em;
-                }}
-                .highlight-card p {{ color: white !important; margin-bottom: 0; }}
+                h1, h2, h3, h4, h5, label, p, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
+                .highlight-card p {{ margin-bottom: 0; }}
                 .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
             </style>
         """, unsafe_allow_html=True)
 
 def display_header(title, logo_path, org_name):
-    encoded_logo = encode_image(logo_path)
-    logo_html = f'<img src="data:image/png;base64,{encoded_logo}" style="width: 50px; height: auto;">'
-    st.markdown(f"""<div class="dashboard-header">
-        <div>{title}</div><div style="text-align: right;">{logo_html}<div style='font-size: 0.5em;'>{org_name or ''}</div></div>
-        </div>""", unsafe_allow_html=True)
+    # This function is now simplified as the main header is just text
+    st.markdown(f"<h1 style='text-align: center; color: white;'>{title}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align: center; color: #ccc; margin-top: -10px;'>{org_name or ''}</h3>", unsafe_allow_html=True)
+    st.markdown("---")
 
 def get_color_for_score(score):
     try:
@@ -252,6 +225,7 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     avg_scores, org_name, all_scores_df = fetch_aacs_dashboard_data(user_email, secrets)
     
     if avg_scores is None or not avg_scores:
+        display_header("Team Performance Dashboard", LOGO_PATH, "N/A")
         st.warning("Dashboard data could not be loaded. Please ensure surveys have been completed by your team.")
         return
 
@@ -271,44 +245,49 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     
     df_best, df_worst = get_performance_highlights(avg_scores, sub_vars_map, sub_abbr_to_full)
 
-    # --- Each section is now in its own card ---
-    with card_container():
-        m1, m2 = st.columns([1, 2.5])
-        with m1:
-            pi_score = avg_scores.get('pi_score', 0)
-            st.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
-            st.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
-        with m2:
-            st.subheader("Performance Summary")
-            st.markdown(generate_dynamic_summary(pi_score, benchmark, avg_scores, sub_vars_map.keys()))
+    # --- Top Metrics & Summary Row ---
+    st.subheader("High-Level Summary")
+    m1, m2 = st.columns([1, 2.5])
+    with m1:
+        pi_score = avg_scores.get('pi_score', 0)
+        st.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
+        st.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
+    with m2:
+        st.markdown(generate_dynamic_summary(pi_score, benchmark, avg_scores, sub_vars_map.keys()))
     
-    with card_container():
-        col1, col2 = st.columns([1.5, 1])
-        with col1:
-            plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
-        with col2:
-            st.subheader("Key Performance Insights")
-            if df_best is not None and not df_best.empty:
-                st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
-                for _, row in df_best.iterrows():
-                    st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
-            if df_worst is not None and not df_worst.empty:
-                st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
-                for _, row in df_worst.iterrows():
-                    st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+    st.markdown("---")
 
-    with card_container():
-        st.subheader("Detailed Analysis")
-        tab1, tab2 = st.tabs(["Sub-Domain Drill-Down", "Score Distribution"])
-        with tab1:
-            st.write("Explore the individual components of each domain.")
-            category = st.selectbox("Select Domain to Explore", list(sub_vars_map.keys()))
-            if category:
-                plot_sub_domain_charts(avg_scores, sub_vars_map[category], sub_abbr_to_full)
-        with tab2:
-            st.write("Analyze the range and variance of scores across team members for each domain.")
-            if all_scores_df is not None and not all_scores_df.empty:
-                plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
+    # --- Main Visuals Columns ---
+    st.subheader("Performance Breakdown")
+    col1, col2 = st.columns([1.5, 1])
+    with col1:
+        plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
+    with col2:
+        st.write("Key Performance Insights")
+        if df_best is not None and not df_best.empty:
+            st.markdown("<h6><span class='strength-icon'>✅</span> Top Strengths</h6>", unsafe_allow_html=True)
+            for _, row in df_best.iterrows():
+                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+        
+        if df_worst is not None and not df_worst.empty:
+            st.markdown("<h6 style='margin-top: 15px;'><span class='focus-icon'>🎯</span> Areas for Focus</h6>", unsafe_allow_html=True)
+            for _, row in df_worst.iterrows():
+                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # --- Detailed Sub-Domain & Distribution Analysis ---
+    st.subheader("Detailed Analysis")
+    tab1, tab2 = st.tabs(["Sub-Domain Drill-Down", "Score Distribution"])
+    with tab1:
+        st.write("Explore the individual components of each domain.")
+        category = st.selectbox("Select Domain to Explore", list(sub_vars_map.keys()))
+        if category:
+            plot_sub_domain_charts(avg_scores, sub_vars_map[category], sub_abbr_to_full)
+    with tab2:
+        st.write("Analyze the range and variance of scores across team members for each domain.")
+        if all_scores_df is not None and not all_scores_df.empty:
+            plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
 
 # ==============================================================================
 # --- SCRIPT EXECUTION ---
@@ -317,8 +296,8 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
 if __name__ == "__main__":
     mock_secrets = {
         "DB_HOST": "localhost",
-        "DB_USER": "your_db_user",
-        "DB_PASSWORD": "your_db_password",
+        "DB_USER": "your_user",
+        "DB_PASSWORD": "your_password",
         "DB_DATABASE": "Vclarifi",
     }
     if 'user_email' not in st.session_state:
