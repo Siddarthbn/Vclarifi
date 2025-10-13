@@ -138,14 +138,14 @@ def set_background(image_path):
                 /* This is the main container that holds all the content */
                 .main .block-container {{
                     background-color: rgba(10, 20, 30, 0.85);
-                    padding: 25px;
+                    padding: 25px 40px;
                     border-radius: 15px;
-                    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+                    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
                     backdrop-filter: blur(5px);
                     -webkit-backdrop-filter: blur(5px);
                     border: 1px solid rgba(255, 255, 255, 0.18);
-                    margin-top: 2rem;
-                    margin-bottom: 2rem;
+                    margin: 2rem auto;
+                    max-width: 95%;
                 }}
                 h1, h2, h3, h4, h5, label, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
                 .dashboard-header {{
@@ -280,48 +280,47 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     df_best, df_worst = get_performance_highlights(avg_scores, sub_vars_map, sub_abbr_to_full)
 
     # --- Top Metrics & Summary Row ---
-    with st.container(border=False):
-        m1, m2 = st.columns([1, 2.5])
-        with m1:
-            pi_score = avg_scores.get('pi_score', 0)
-            st.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
-            st.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
-        with m2:
-            st.subheader("Performance Summary")
-            st.markdown(generate_dynamic_summary(pi_score, benchmark, avg_scores, sub_vars_map.keys()))
+    m1, m2 = st.columns([1, 2.5])
+    with m1:
+        pi_score = avg_scores.get('pi_score', 0)
+        st.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
+        st.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
+    with m2:
+        st.subheader("Performance Summary")
+        st.markdown(generate_dynamic_summary(pi_score, benchmark, avg_scores, sub_vars_map.keys()))
+    
+    st.markdown("---")
 
     # --- Main Visuals Columns ---
-    with st.container(border=False):
-        col1, col2 = st.columns([1.5, 1])
-        with col1:
-            with st.container(border=True):
-                plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
-        with col2:
-            with st.container(border=True):
-                st.subheader("Key Performance Insights")
-                if df_best is not None and not df_best.empty:
-                    st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
-                    for _, row in df_best.iterrows():
-                        st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
-                
-                if df_worst is not None and not df_worst.empty:
-                    st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
-                    for _, row in df_worst.iterrows():
-                        st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1.5, 1])
+    with col1:
+        plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
+    with col2:
+        st.subheader("Key Performance Insights")
+        if df_best is not None and not df_best.empty:
+            st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
+            for _, row in df_best.iterrows():
+                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+        
+        if df_worst is not None and not df_worst.empty:
+            st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
+            for _, row in df_worst.iterrows():
+                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+
+    st.markdown("---")
 
     # --- Detailed Sub-Domain & Distribution Analysis ---
-    with st.container(border=True):
-        st.subheader("Detailed Analysis")
-        tab1, tab2 = st.tabs(["Sub-Domain Drill-Down", "Score Distribution"])
-        with tab1:
-            st.write("Explore the individual components of each domain.")
-            category = st.selectbox("Select Domain to Explore", list(sub_vars_map.keys()))
-            if category:
-                plot_sub_domain_charts(avg_scores, sub_vars_map[category], sub_abbr_to_full)
-        with tab2:
-            st.write("Analyze the range and variance of scores across team members for each domain.")
-            if all_scores_df is not None and not all_scores_df.empty:
-                plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
+    st.subheader("Detailed Analysis")
+    tab1, tab2 = st.tabs(["Sub-Domain Drill-Down", "Score Distribution"])
+    with tab1:
+        st.write("Explore the individual components of each domain.")
+        category = st.selectbox("Select Domain to Explore", list(sub_vars_map.keys()))
+        if category:
+            plot_sub_domain_charts(avg_scores, sub_vars_map[category], sub_abbr_to_full)
+    with tab2:
+        st.write("Analyze the range and variance of scores across team members for each domain.")
+        if all_scores_df is not None and not all_scores_df.empty:
+            plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
 
 # ==============================================================================
 # --- SCRIPT EXECUTION ---
@@ -334,10 +333,13 @@ if __name__ == "__main__":
         "DB_PASSWORD": "your_db_password",
         "DB_DATABASE": "Vclarifi",
     }
+
     if 'user_email' not in st.session_state:
         st.session_state.user_email = 'siddarth@vtaraenergygroup.com'
+
     def mock_navigate_to(page):
         st.success(f"Navigating to {page}...")
+
     dashboard(
         navigate_to=mock_navigate_to, 
         user_email=st.session_state.user_email,
