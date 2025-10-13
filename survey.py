@@ -8,7 +8,7 @@ import pandas as pd
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Vclarifi AACS",
+    page_title="Vclarifi",
     page_icon="images/VTARA.png",
     layout="wide"
 )
@@ -83,8 +83,8 @@ def survey(navigate_to, user_email, secrets):
             st.warning(f"Logo image not found: {logo_path_param}")
 
     def send_reminder_email(recipient_email, recipient_name, admin_name, team_name):
-        subject = f"Reminder: Please Complete the AACS Survey for {team_name}"
-        body = f"Hi {recipient_name},\n\nThis is a friendly reminder from your team administrator, {admin_name}, to complete the AACS survey for {team_name}.\n\nYour participation is crucial for our team's assessment and development."
+        subject = f"Reminder: Please Complete the Vclarifi Survey for {team_name}"
+        body = f"Hi {recipient_name},\n\nThis is a friendly reminder from your team administrator, {admin_name}, to complete the Vclarifi survey for {team_name}.\n\nYour participation is crucial for our team's assessment and development."
         logging.info(f"REMINDER EMAIL SIMULATION: TO: {recipient_email}\nSUBJECT: {subject}\nBODY:\n{body}")
         st.toast(f"Reminder sent to {recipient_name}!", icon="📧")
 
@@ -419,7 +419,7 @@ def survey(navigate_to, user_email, secrets):
             st.success("Your team administrator will be notified. You can now safely close this window.")
 
     def show_admin_panel(user_info):
-        st.title(f"👑 Admin Panel for {user_info.get('sports_team', 'Your Team')}")
+        st.title(f"Admin Panel for {user_info.get('sports_team', 'Your Team')}")
         st.markdown("---")
 
         with st.spinner("Loading team status..."):
