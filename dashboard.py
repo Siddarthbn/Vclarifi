@@ -147,6 +147,11 @@ def set_background(image_path):
                     border: 1px solid rgba(255, 255, 255, 0.18);
                     margin-bottom: 20px;
                 }}
+                .card-container h3 {{
+                    margin-top: 0;
+                    padding-bottom: 10px;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+                }}
                 .metric-card {{
                     background-color: rgba(10, 20, 30, 0.75);
                     padding: 20px;
@@ -192,36 +197,11 @@ def get_color_for_score(score):
         else: return '#2ca02c'           # Green
     except (ValueError, TypeError): return '#808080' # Grey
 
-def plot_sub_domain_charts(scores_data, sub_vars):
-    """Generates donut charts, each enclosed in a 'highlight-card'."""
-    cols = st.columns(len(sub_vars))
-    for i, sub in enumerate(sub_vars):
-        with cols[i]:
-            score = scores_data.get(sub, 0.0)
-            full_name = SUB_DOMAIN_FULL_NAMES.get(sub, sub)
-
-            st.markdown('<div class="highlight-card">', unsafe_allow_html=True)
-            fig = go.Figure(go.Pie(
-                values=[score, 100 - score], hole=.7,
-                marker_colors=[get_color_for_score(score), 'rgba(255,255,255,0.1)'],
-                sort=False, textinfo='none'
-            ))
-            fig.update_layout(
-                title_text=full_name, annotations=[dict(text=f'{score:.1f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')],
-                showlegend=False, height=250, margin=dict(t=40, b=0, l=0, r=0),
-                paper_bgcolor='rgba(0,0,0,0)', font_color='white'
-            )
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-            st.markdown('</div>', unsafe_allow_html=True)
-
-
 def get_performance_highlights(org_data, sub_vars_map):
     all_scores = [{'Sub-Domain_Short': sub, 'Sub-Domain': SUB_DOMAIN_FULL_NAMES.get(sub, sub), 'Domain': main, 'Score': float(org_data.get(sub, 0.0))}
                   for main, subs in sub_vars_map.items() for sub in subs if sub in org_data and org_data.get(sub) is not None]
-
     if not all_scores:
         return None, None
-
     df = pd.DataFrame(all_scores)
     df_best = df.sort_values(by="Score", ascending=False).head(3)
     df_worst = df.sort_values(by="Score", ascending=True).head(3)
@@ -241,23 +221,6 @@ def generate_dynamic_summary(pi_score, benchmark, df_best, df_worst):
         summary += f" For targeted development, **{top_focus['Sub-Domain']}** (score: {top_focus['Score']:.1f}) is identified as a primary area for improvement."
     summary += " Continuous focus on these insights can further enhance team effectiveness."
     return summary
-
-def plot_score_distribution(df_all_scores, domains, benchmark):
-    """Generates the box plot within its own styled container."""
-    st.markdown('<div class="card-container">', unsafe_allow_html=True)
-    st.subheader("Score Distribution Across Team Members")
-    selected_domain = st.selectbox("Select a Domain:", list(domains.keys()), key="dist_domain_select")
-    score_col = f"{selected_domain}_score"
-    if score_col in df_all_scores.columns:
-        fig = px.box(df_all_scores, y=score_col, title=f"Score Distribution for {selected_domain}", points="all",
-                         color_discrete_sequence=['#007BFF'])
-        fig.add_hline(y=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark", annotation_position="bottom right")
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white',
-                                  yaxis_title="Score", xaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No distribution data available for this domain.")
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
 # --- MAIN DASHBOARD FUNCTION ---
@@ -308,32 +271,28 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
             st.metric("Area for Focus", "N/A")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Performance Summary and Overview Plots (REFINED) ---
+    # --- Performance Summary and Overview Plots ---
     col1, col2 = st.columns([2, 1])
-
     with col1:
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.subheader("Performance Summary")
+        st.subheader("Performance Summary & Domain Comparison")
         st.markdown(generate_dynamic_summary(pi_score, benchmark, df_best, df_worst))
-
-        st.markdown("---") # Visual separator
-
-        st.subheader("Domain Performance Comparison")
+        
         domain_names = list(sub_vars_map.keys())
         domain_scores = [avg_scores.get(f'{domain}_score', 0.0) for domain in domain_names]
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
+        fig_bar = go.Figure(go.Bar(
             x=domain_names, y=domain_scores,
             marker_color=[get_color_for_score(s) for s in domain_scores],
             text=[f'{v:.1f}' for v in domain_scores], textposition='outside', textfont_color='white'
         ))
-        fig.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(domain_names)-0.5, y1=benchmark,
+        fig_bar.add_shape(type="line", x0=-0.5, y0=benchmark, x1=len(domain_names)-0.5, y1=benchmark,
                       line=dict(color="white", dash="dash", width=2), name='Benchmark')
-        fig.update_layout(
+        fig_bar.update_layout(
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white',
-            yaxis=dict(range=[0, 105], gridcolor='rgba(255,255,255,0.1)'), xaxis=dict(tickangle=-45)
+            yaxis=dict(range=[0, 105], gridcolor='rgba(255,255,255,0.1)'), xaxis=dict(tickangle=-45),
+            margin=dict(t=20, b=20, l=20, r=20)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig_bar, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
@@ -353,14 +312,42 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     st.markdown('<div class="card-container">', unsafe_allow_html=True)
     st.subheader("Detailed Sub-Domain Analysis")
     tabs = st.tabs(list(sub_vars_map.keys()))
-    for i, (domain, sub_domains) in enumerate(sub_vars_map.items()):
-        with tabs[i]:
-            plot_sub_domain_charts(avg_scores, sub_domains)
+    for i, (domain, sub_domains) in enumerate(tabs):
+        with domain:
+            sub_cols = st.columns(len(sub_vars_map[sub_domains]))
+            for j, sub in enumerate(sub_vars_map[sub_domains]):
+                with sub_cols[j]:
+                    score = avg_scores.get(sub, 0.0)
+                    full_name = SUB_DOMAIN_FULL_NAMES.get(sub, sub)
+                    fig_pie = go.Figure(go.Pie(
+                        values=[score, 100 - score], hole=.7,
+                        marker_colors=[get_color_for_score(score), 'rgba(255,255,255,0.1)'],
+                        sort=False, textinfo='none'
+                    ))
+                    fig_pie.update_layout(
+                        title_text=full_name, annotations=[dict(text=f'{score:.1f}', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')],
+                        showlegend=False, height=250, margin=dict(t=40, b=0, l=0, r=0),
+                        paper_bgcolor='rgba(0,0,0,0)', font_color='white'
+                    )
+                    st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': False})
     st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Score Distribution ---
     if all_scores_df is not None and not all_scores_df.empty:
-        plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
+        st.markdown('<div class="card-container">', unsafe_allow_html=True)
+        st.subheader("Score Distribution Across Team Members")
+        selected_domain = st.selectbox("Select a Domain:", list(sub_vars_map.keys()), key="dist_domain_select")
+        score_col = f"{selected_domain}_score"
+        if score_col in all_scores_df.columns:
+            fig_box = px.box(all_scores_df, y=score_col, title=f"Score Distribution for {selected_domain}", points="all",
+                             color_discrete_sequence=['#007BFF'])
+            fig_box.add_hline(y=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark", annotation_position="bottom right")
+            fig_box.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white',
+                                      yaxis_title="Score", xaxis_title="")
+            st.plotly_chart(fig_box, use_container_width=True)
+        else:
+            st.info("No distribution data available for this domain.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Recommendations Button ---
     st.markdown('<div class="card-container">', unsafe_allow_html=True)
@@ -375,22 +362,16 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
 # ==============================================================================
 
 if __name__ == "__main__":
-    # Create dummy folders and files for local execution if they don't exist
     if not os.path.exists("images"):
         os.makedirs("images")
-    # You may need to add placeholder image files like "VTARA.png" and "background.jpg"
-    # in the 'images' directory for the script to run without file errors.
-
+    
     mock_secrets = {
-        "DB_HOST": "localhost",
-        "DB_USER": "your_db_user",
-        "DB_PASSWORD": "your_db_password",
-        "DB_DATABASE": "Vclarifi",
+        "DB_HOST": "localhost", "DB_USER": "your_db_user",
+        "DB_PASSWORD": "your_db_password", "DB_DATABASE": "Vclarifi",
     }
-
     if 'user_email' not in st.session_state:
         st.session_state.user_email = 'siddarth@vtaraenergygroup.com'
-
+    
     def mock_navigate_to(page):
         st.success(f"Navigating to {page}...")
 
