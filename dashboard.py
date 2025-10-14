@@ -188,7 +188,13 @@ def get_color_for_score(score):
     except (ValueError, TypeError): return '#808080' # Grey
 
 def plot_domain_comparison_bar_chart(scores_data, domains, benchmark):
-    """Generates a bar chart for the 4 main AACS domain scores with benchmark."""
+    """
+    REFINED: Generates a bar chart within its own styled container.
+    The function now handles its own title and container for better encapsulation.
+    """
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    st.subheader("Domain Performance Comparison")
+    
     domain_names = list(domains.keys())
     domain_scores = [scores_data.get(f'{domain}_score', 0.0) for domain in domains]
     
@@ -206,7 +212,7 @@ def plot_domain_comparison_bar_chart(scores_data, domains, benchmark):
                   name='Benchmark')
     
     fig.update_layout(
-        title_text="Domain Performance Comparison", 
+        # The title is now an st.subheader, making the chart title redundant
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(255,255,255,0.1)', 
         font_color='white', 
@@ -214,14 +220,21 @@ def plot_domain_comparison_bar_chart(scores_data, domains, benchmark):
         xaxis=dict(tickangle=-45)
     )
     st.plotly_chart(fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def plot_sub_domain_charts(scores_data, sub_vars):
-    """Generates donut charts for sub-domains."""
+    """
+    REFINED: Generates donut charts, each enclosed in a 'highlight-card' for better visual separation.
+    """
     cols = st.columns(len(sub_vars))
     for i, sub in enumerate(sub_vars):
         with cols[i]:
             score = scores_data.get(sub, 0.0)
             full_name = SUB_DOMAIN_FULL_NAMES.get(sub, sub)
+            
+            # Wrap each chart in a visually distinct container
+            st.markdown('<div class="highlight-card">', unsafe_allow_html=True)
+            
             fig = go.Figure(go.Pie(
                 values=[score, 100 - score], hole=.7,
                 marker_colors=[get_color_for_score(score), 'rgba(255,255,255,0.1)'],
@@ -233,6 +246,8 @@ def plot_sub_domain_charts(scores_data, sub_vars):
                 paper_bgcolor='rgba(0,0,0,0)', font_color='white'
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            st.markdown('</div>', unsafe_allow_html=True)
+
 
 def get_performance_highlights(org_data, sub_vars_map):
     all_scores = [{'Sub-Domain_Short': sub, 'Sub-Domain': SUB_DOMAIN_FULL_NAMES.get(sub, sub), 'Domain': main, 'Score': float(org_data.get(sub, 0.0))} 
@@ -266,7 +281,13 @@ def generate_dynamic_summary(pi_score, benchmark, df_best, df_worst):
     return summary
 
 def plot_score_distribution(df_all_scores, domains, benchmark):
+    """
+    REFINED: Generates the box plot within its own styled container.
+    This function now handles its own header and container for consistency.
+    """
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
     st.subheader("Score Distribution Across Team Members")
+    
     selected_domain = st.selectbox("Select a Domain:", list(domains.keys()), key="dist_domain_select")
     score_col = f"{selected_domain}_score"
     
@@ -275,10 +296,12 @@ def plot_score_distribution(df_all_scores, domains, benchmark):
                          color_discrete_sequence=['#007BFF'])
         fig.add_hline(y=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark", annotation_position="bottom right")
         fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white',
-                                yaxis_title="Score", xaxis_title="")
+                                  yaxis_title="Score", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No distribution data available for this domain.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
 # --- MAIN DASHBOARD FUNCTION ---
@@ -305,73 +328,64 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
     df_best, df_worst = get_performance_highlights(avg_scores, sub_vars_map)
 
     # --- Top Metrics Row ---
-    with st.container():
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        m1, m2, m3, m4 = st.columns(4)
-        pi_score = avg_scores.get('pi_score', 0)
-        m1.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
-        m2.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
-        if df_best is not None and not df_best.empty:
-            m3.metric("Top Performing Area", df_best.iloc[0]['Sub-Domain'], f"Score: {df_best.iloc[0]['Score']:.1f}")
-        if df_worst is not None and not df_worst.empty:
-            m4.metric("Area for Focus", df_worst.iloc[0]['Sub-Domain'], f"Score: {df_worst.iloc[0]['Score']:.1f}")
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    m1, m2, m3, m4 = st.columns(4)
+    pi_score = avg_scores.get('pi_score', 0)
+    m1.metric("Overall PI Score", f"{pi_score:.1f}", f"{pi_score - benchmark:.1f} vs Benchmark", delta_color="off")
+    m2.metric("Total Respondents", f"{int(avg_scores.get('respondent_count', 0))}")
+    if df_best is not None and not df_best.empty:
+        m3.metric("Top Performing Area", df_best.iloc[0]['Sub-Domain'], f"Score: {df_best.iloc[0]['Score']:.1f}")
+    if df_worst is not None and not df_worst.empty:
+        m4.metric("Area for Focus", df_worst.iloc[0]['Sub-Domain'], f"Score: {df_worst.iloc[0]['Score']:.1f}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Performance Summary and Overview Plots ---
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        with st.container():
-            st.markdown('<div class="card-container">', unsafe_allow_html=True)
-            st.subheader("Performance Summary")
-            st.markdown(generate_dynamic_summary(pi_score, benchmark, df_best, df_worst))
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-container">', unsafe_allow_html=True)
+        st.subheader("Performance Summary")
+        st.markdown(generate_dynamic_summary(pi_score, benchmark, df_best, df_worst))
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        with st.container():
-            st.markdown('<div class="card-container">', unsafe_allow_html=True)
-            plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # REFINED: The plot function now creates its own container and header.
+        plot_domain_comparison_bar_chart(avg_scores, sub_vars_map, benchmark)
 
     with col2:
-        with st.container():
-            st.markdown('<div class="card-container">', unsafe_allow_html=True)
-            st.subheader("Key Performance Insights")
-            if df_best is not None and not df_best.empty:
-                st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
-                for _, row in df_best.iterrows():
-                    st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
-            
-            if df_worst is not None and not df_worst.empty:
-                st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
-                for _, row in df_worst.iterrows():
-                    st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-container">', unsafe_allow_html=True)
+        st.subheader("Key Performance Insights")
+        if df_best is not None and not df_best.empty:
+            st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
+            for _, row in df_best.iterrows():
+                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+        
+        if df_worst is not None and not df_worst.empty:
+            st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
+            for _, row in df_worst.iterrows():
+                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Detailed Sub-Domain Analysis ---
-    with st.container():
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.subheader("Detailed Sub-Domain Analysis")
-        tabs = st.tabs(list(sub_vars_map.keys()))
-        for i, (domain, sub_domains) in enumerate(sub_vars_map.items()):
-            with tabs[i]:
-                plot_sub_domain_charts(avg_scores, sub_domains)
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    st.subheader("Detailed Sub-Domain Analysis")
+    tabs = st.tabs(list(sub_vars_map.keys()))
+    for i, (domain, sub_domains) in enumerate(sub_vars_map.items()):
+        with tabs[i]:
+            plot_sub_domain_charts(avg_scores, sub_domains)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Score Distribution ---
-    with st.container():
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        if all_scores_df is not None and not all_scores_df.empty:
-            plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
-        st.markdown('</div>', unsafe_allow_html=True)
+    # REFINED: The plot function now creates its own container and header.
+    if all_scores_df is not None and not all_scores_df.empty:
+        plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
 
     # --- Recommendations Button ---
-    with st.container():
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.subheader("Next Steps")
-        st.markdown("Click below to view tailored recommendations based on your team's performance.")
-        if st.button("View Recommendations ➔", use_container_width=True, key="recommend_button"):
-            navigate_to("Recommendations")
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    st.subheader("Next Steps")
+    st.markdown("Click below to view tailored recommendations based on your team's performance.")
+    if st.button("View Recommendations ➔", use_container_width=True, key="recommend_button"):
+        navigate_to("Recommendations")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
 # --- SCRIPT EXECUTION ---
