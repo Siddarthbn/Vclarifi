@@ -137,35 +137,21 @@ def set_background(image_path):
                     background-size: cover;
                 }}
                 [data-testid="stHeader"], [data-testid="stToolbar"] {{ background: rgba(0,0,0,0); }}
-                .card-container {{
-                    background-color: rgba(10, 20, 30, 0.75);
-                    padding: 25px;
-                    border-radius: 15px;
-                    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-                    backdrop-filter: blur(5px);
-                    -webkit-backdrop-filter: blur(5px);
-                    border: 1px solid rgba(255, 255, 255, 0.18);
-                    margin-bottom: 20px;
-                }}
                 .metric-card {{
                     background-color: rgba(10, 20, 30, 0.75);
                     padding: 20px;
                     border-radius: 15px;
                     text-align: center;
                     height: 100%;
+                    border: 1px solid rgba(255, 255, 255, 0.18);
                 }}
-                h1, h2, h3, h4, h5, label, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
+                h1, h2, h3, h4, h5, p, label, .st-b3, .st-ag, .st-be, .stMetric * {{ color: white !important; }}
                 .main .block-container {{ padding: 2rem 1.5rem; }}
                 .dashboard-header {{
                     background-color: rgba(0,0,0,0.8); color: white; padding: 20px 30px; border-radius: 10px;
                     margin-bottom: 30px; font-size: 2.5em; font-weight: bold;
                     display: flex; justify-content: space-between; align-items: center;
                 }}
-                .highlight-card {{
-                    background-color: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 8px;
-                    border: 1px solid rgba(255, 255, 255, 0.2); margin-bottom: 10px;
-                }}
-                .highlight-card p {{ color: white !important; margin-bottom: 0; }}
                 .strength-icon {{ color: #2ca02c; }} .focus-icon {{ color: #ff7f0e; }}
                 .stButton button {{
                     background-color: #007bff;
@@ -193,14 +179,13 @@ def get_color_for_score(score):
     except (ValueError, TypeError): return '#808080' # Grey
 
 def plot_sub_domain_charts(scores_data, sub_vars):
-    """Generates donut charts, each enclosed in a 'highlight-card'."""
+    """Generates donut charts for sub-domains."""
     cols = st.columns(len(sub_vars))
     for i, sub in enumerate(sub_vars):
         with cols[i]:
             score = scores_data.get(sub, 0.0)
             full_name = SUB_DOMAIN_FULL_NAMES.get(sub, sub)
 
-            st.markdown('<div class="highlight-card">', unsafe_allow_html=True)
             fig = go.Figure(go.Pie(
                 values=[score, 100 - score], hole=.7,
                 marker_colors=[get_color_for_score(score), 'rgba(255,255,255,0.1)'],
@@ -212,8 +197,6 @@ def plot_sub_domain_charts(scores_data, sub_vars):
                 paper_bgcolor='rgba(0,0,0,0)', font_color='white'
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-            st.markdown('</div>', unsafe_allow_html=True)
-
 
 def get_performance_highlights(org_data, sub_vars_map):
     all_scores = [{'Sub-Domain_Short': sub, 'Sub-Domain': SUB_DOMAIN_FULL_NAMES.get(sub, sub), 'Domain': main, 'Score': float(org_data.get(sub, 0.0))}
@@ -243,21 +226,32 @@ def generate_dynamic_summary(pi_score, benchmark, df_best, df_worst):
     return summary
 
 def plot_score_distribution(df_all_scores, domains, benchmark):
-    """Generates the box plot within its own styled container."""
-    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    """Generates a violin plot to show score distribution."""
     st.subheader("Score Distribution Across Team Members")
+    st.write("This violin plot shows the range and density of scores across team members for a selected domain. Each dot represents an individual's score.")
+    
     selected_domain = st.selectbox("Select a Domain:", list(domains.keys()), key="dist_domain_select")
     score_col = f"{selected_domain}_score"
     if score_col in df_all_scores.columns:
-        fig = px.box(df_all_scores, y=score_col, title=f"Score Distribution for {selected_domain}", points="all",
-                         color_discrete_sequence=['#007BFF'])
+        # --- CHANGED: Using Violin plot for richer distribution insights ---
+        fig = px.violin(df_all_scores, y=score_col, title=f"Score Distribution for {selected_domain}",
+                        points="all", box=True, # Show a box plot inside the violin
+                        color_discrete_sequence=['#007BFF'])
+
         fig.add_hline(y=benchmark, line_dash="dash", line_color="white", annotation_text="Benchmark", annotation_position="bottom right")
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white',
-                                  yaxis_title="Score", xaxis_title="")
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(255,255,255,0.1)',
+            font_color='white',
+            yaxis_title="Score",
+            xaxis_title="",
+            yaxis=dict(gridcolor='rgba(255,255,255,0.2)'),
+            xaxis=dict(showgrid=False)
+        )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No distribution data available for this domain.")
-    st.markdown('</div>', unsafe_allow_html=True)
+
 
 # ==============================================================================
 # --- MAIN DASHBOARD FUNCTION ---
@@ -308,19 +302,18 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
             st.metric("Area for Focus", "N/A")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Performance Summary and Overview Plots (REFINED) ---
+    st.markdown("---")
+    # --- Performance Summary and Overview Plots ---
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
         st.subheader("Performance Summary")
         st.markdown(generate_dynamic_summary(pi_score, benchmark, df_best, df_worst))
-
-        st.markdown("---") # Visual separator
-
+        st.write("") # Spacer
+        
         st.subheader("Domain Performance Comparison")
         domain_names = list(sub_vars_map.keys())
-        domain_scores = [avg_scores.get(f'{domain}_score', 0.0) for domain in domain_names]
+        domain_scores = [avg_scores.get(f'{domain.capitalize()}_score', 0.0) for domain in domain_names]
         fig = go.Figure()
         fig.add_trace(go.Bar(
             x=domain_names, y=domain_scores,
@@ -331,44 +324,46 @@ def dashboard(navigate_to, user_email, secrets, **kwargs):
                       line=dict(color="white", dash="dash", width=2), name='Benchmark')
         fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.1)', font_color='white',
-            yaxis=dict(range=[0, 105], gridcolor='rgba(255,255,255,0.1)'), xaxis=dict(tickangle=-45)
+            yaxis=dict(range=[0, 105], gridcolor='rgba(255,255,255,0.2)'),
+            xaxis=dict(tickangle=-45, gridcolor='rgba(255,255,255,0.1)'),
+            showlegend=False
         )
         st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
         st.subheader("Key Performance Insights")
         if df_best is not None and not df_best.empty:
             st.markdown("<h5><span class='strength-icon'>✅</span> Top 3 Strengths</h5>", unsafe_allow_html=True)
             for _, row in df_best.iterrows():
-                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
+                st.info(f"**{row['Sub-Domain']}** (Score: {row['Score']:.1f})")
+        
+        st.write("") # Spacer
+        
         if df_worst is not None and not df_worst.empty:
             st.markdown("<h5 style='margin-top: 20px;'><span class='focus-icon'>🎯</span> Top 3 Areas for Focus</h5>", unsafe_allow_html=True)
             for _, row in df_worst.iterrows():
-                st.markdown(f"<div class='highlight-card'><p><b>{row['Sub-Domain']}</b> (Score: {row['Score']:.1f})</p></div>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+                st.warning(f"**{row['Sub-Domain']}** (Score: {row['Score']:.1f})")
 
+    st.markdown("---")
     # --- Detailed Sub-Domain Analysis ---
-    st.markdown('<div class="card-container">', unsafe_allow_html=True)
     st.subheader("Detailed Sub-Domain Analysis")
-    tabs = st.tabs(list(sub_vars_map.keys()))
+    tabs = st.tabs([f"**{key}**" for key in sub_vars_map.keys()])
     for i, (domain, sub_domains) in enumerate(sub_vars_map.items()):
         with tabs[i]:
             plot_sub_domain_charts(avg_scores, sub_domains)
-    st.markdown('</div>', unsafe_allow_html=True)
 
+    st.markdown("---")
     # --- Score Distribution ---
     if all_scores_df is not None and not all_scores_df.empty:
         plot_score_distribution(all_scores_df, sub_vars_map, benchmark)
 
+    st.markdown("---")
     # --- Recommendations Button ---
-    st.markdown('<div class="card-container">', unsafe_allow_html=True)
     st.subheader("Next Steps")
     st.markdown("Click below to view tailored recommendations based on your team's performance.")
     if st.button("View Recommendations ➔", use_container_width=True, key="recommend_button"):
         navigate_to("Recommendations")
-    st.markdown('</div>', unsafe_allow_html=True)
+
 
 # ==============================================================================
 # --- SCRIPT EXECUTION ---
@@ -378,7 +373,7 @@ if __name__ == "__main__":
     # Create dummy folders and files for local execution if they don't exist
     if not os.path.exists("images"):
         os.makedirs("images")
-    # You may need to add placeholder image files like "VTARA.png" and "background.jpg"
+    # You may need to add placeholder image files like "VTARA.png" and "bg.jpg"
     # in the 'images' directory for the script to run without file errors.
 
     mock_secrets = {
